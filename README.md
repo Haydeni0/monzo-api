@@ -23,30 +23,25 @@ MONZO_CLIENT_SECRET=mnzconf.xxx
 
 ## Workflow
 
-### Quick Start (last 89 days)
+### Full History (default)
 
 ```bash
 monzo auth            # authenticate, approve in Monzo app
-monzo export          # export to JSON (default 89 days)
+monzo export          # export full history (uses backward pagination)
 monzo ingest          # import JSON into DuckDB
 ```
 
-### Full History
-
-Monzo limits transaction access to 89 days after 5 minutes of authentication.
-To get your full history, you must export immediately after authenticating:
+### Quick Export (recent only)
 
 ```bash
-monzo auth --force    # force new authentication
-# Approve in Monzo app immediately!
-monzo export -d 3650  # export 10 years (within 5 mins of approval)
+monzo export -d 30    # only last 30 days
 monzo ingest          # import into database
 ```
 
 ### Updating Data
 
 ```bash
-monzo export          # fetch latest 89 days
+monzo export          # fetch full history again
 monzo ingest          # upserts into database (existing data preserved)
 ```
 
@@ -57,8 +52,8 @@ monzo --help          # show all commands
 monzo status          # show token, cache, and database status
 monzo auth            # authenticate with Monzo
 monzo auth --force    # force new authentication
-monzo export          # export to JSON cache (default 89 days)
-monzo export -d 365   # export specific number of days
+monzo export          # export full history to JSON
+monzo export -d 30    # export only last 30 days
 monzo ingest          # import JSON cache into DuckDB
 monzo db              # setup DuckDB database
 monzo db --stats      # show database row counts

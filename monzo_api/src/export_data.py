@@ -1,9 +1,11 @@
 """Export Monzo data to JSON.
 
-Simple script to fetch accounts, pots, and transactions, then save to JSON.
+Uses backward pagination with `before` param to get full transaction history.
+No 365-day limit when using `before` instead of `since` alone.
 
 Usage:
-    python -m monzo_api.src.export_data [--days 89]
+    monzo export           # full history
+    monzo export -d 30     # last 30 days only
 """
 
 from datetime import UTC, datetime, timedelta
@@ -49,19 +51,28 @@ def fetch_pots(client: httpx.Client, account_id: str) -> list[Pot]:
 def fetch_transactions(
     client: httpx.Client,
     account_id: str,
-    since: str,
+    since: str | None = None,
 ) -> list[Transaction]:
-    """Fetch transactions for an account, paginating forward from `since`."""
+    """Fetch transactions using backward pagination with `before`.
+
+    Uses `before` param to avoid the 365-day `since` limit.
+    Optionally stops at `since` date if provided.
+    """
     all_txs: list[Transaction] = []
-    cursor = since
+    before_cursor: str | None = None  # Start from now
 
     while True:
-        params = {"account_id": account_id, "limit": 100, "since": cursor, "expand[]": "merchant"}
-        resp = client.get("/transactions", params=params)
+        params: dict = {
+            "account_id": account_id,
+            "limit": 100,
+            "expand[]": "merchant",
+        }
+        if before_cursor:
+            params["before"] = before_cursor
 
+        resp = client.get("/transactions", params=params)
         if resp.status_code == 403:
             raise SCAExpiredError
-
         resp.raise_for_status()
         txs_raw = resp.json().get("transactions", [])
 
@@ -69,19 +80,43 @@ def fetch_transactions(
             break
 
         txs = [Transaction.model_validate(t) for t in txs_raw]
+
+        # Filter out transactions before our cutoff date
+        if since:
+            txs = [t for t in txs if t.created.isoformat() >= since]
+            if not txs:
+                break
+
         all_txs.extend(txs)
-        cursor = txs[-1].id
+
+        # Set cursor to oldest transaction's timestamp for next page
+        oldest = min(txs, key=lambda t: t.created)
+        before_cursor = oldest.created.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
         if len(all_txs) % 1000 < 100:
             print(f"    {len(all_txs)}...")
 
+        # If we filtered any out, we've hit the boundary
+        if since and len(txs) < len(txs_raw):
+            break
+
+    # Sort oldest first (consistent with forward pagination)
+    all_txs.sort(key=lambda t: t.created)
     return all_txs
 
 
-def export(days: int = 89) -> MonzoExport:
-    """Export Monzo data."""
-    since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print(f"Fetching data since {since[:10]} ({days} days)\n")
+def export(days: int | None = None) -> MonzoExport:
+    """Export Monzo data.
+
+    Args:
+        days: Number of days to fetch. None = full history.
+    """
+    if days:
+        since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        print(f"Fetching last {days} days (since {since[:10]})\n")
+    else:
+        since = None
+        print("Fetching full transaction history\n")
 
     token = load_token()
     client = create_client(token)
@@ -121,12 +156,8 @@ def export(days: int = 89) -> MonzoExport:
     )
 
 
-def main(days: int = 89) -> None:
+def main(days: int | None = None) -> None:
     """Export and save to JSON."""
     data = export(days)
     data.save(CACHE_FILE)
     print(f"\nSaved to {CACHE_FILE}")
-
-
-if __name__ == "__main__":
-    main()
