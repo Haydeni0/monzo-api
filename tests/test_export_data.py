@@ -1,9 +1,10 @@
 """Tests for export_data module using mock API."""
 
 import httpx
+import pytest
 from pytest_mock import MockerFixture
 
-from monzo_api.src.export_data import fetch_accounts, fetch_pots, fetch_transactions
+from monzo_api.src.export_data import SCAExpiredError, fetch_accounts, fetch_pots, fetch_transactions
 
 
 class TestFetchAccounts:
@@ -87,18 +88,18 @@ class TestFetchTransactions:
         calls = mock_client.get.call_args_list
         assert calls[1][1]["params"]["since"] == "tx_1"
 
-    def test_handles_403_gracefully(self, mocker: MockerFixture, capsys) -> None:
-        """Should stop and print message on 403 (90-day limit)."""
+    def test_raises_sca_expired_on_403(self, mocker: MockerFixture) -> None:
+        """Should raise SCAExpiredError on 403 (90-day limit)."""
         mock_response = mocker.Mock()
         mock_response.status_code = 403
 
         mock_client = mocker.Mock(spec=httpx.Client)
         mock_client.get.return_value = mock_response
 
-        txs = fetch_transactions(mock_client, "acc_123", "2024-01-01T00:00:00Z")
+        with pytest.raises(SCAExpiredError) as exc_info:
+            fetch_transactions(mock_client, "acc_123", "2024-01-01T00:00:00Z")
 
-        assert len(txs) == 0
-        assert "90-day limit" in capsys.readouterr().out
+        assert "monzo auth --force" in str(exc_info.value)
 
     @staticmethod
     def _make_response(mocker: MockerFixture, data: dict):

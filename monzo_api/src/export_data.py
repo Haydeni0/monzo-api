@@ -3,7 +3,7 @@
 Simple script to fetch accounts, pots, and transactions, then save to JSON.
 
 Usage:
-    python -m monzo_api.src.export_data [--days 90]
+    python -m monzo_api.src.export_data [--days 89]
 """
 
 import json
@@ -13,6 +13,17 @@ import httpx
 
 from monzo_api.src.config import CACHE_FILE
 from monzo_api.src.utils import create_client, load_token
+
+
+class SCAExpiredError(Exception):
+    """Raised when the 90-day transaction limit is hit due to expired SCA."""
+
+    def __init__(self) -> None:
+        """Initialize with helpful message."""
+        super().__init__(
+            "SCA expired - can only access last 89 days.\n"
+            "Run 'monzo auth --force' then immediately 'monzo export -d <days>' for full history."
+        )
 
 
 def fetch_accounts(client: httpx.Client) -> list[dict]:
@@ -43,8 +54,7 @@ def fetch_transactions(
         resp = client.get("/transactions", params=params)
 
         if resp.status_code == 403:
-            print("    (90-day limit hit)")
-            break
+            raise SCAExpiredError
 
         resp.raise_for_status()
         txs = resp.json().get("transactions", [])
