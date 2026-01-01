@@ -61,7 +61,7 @@ def fetch_transactions(
     return all_txs
 
 
-def export(days: int = 90) -> dict:
+def export(days: int = 89) -> dict:
     """Export Monzo data to dict."""
     since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"Fetching data since {since[:10]} ({days} days)\n")
@@ -104,15 +104,8 @@ def export(days: int = 90) -> dict:
     }
 
 
-def main(days: int = 90) -> None:
+def main(days: int = 89) -> None:
     """Export and save to JSON."""
     data = export(days)
     CACHE_FILE.write_text(json.dumps(data, indent=2))
     print(f"\nSaved to {CACHE_FILE}")
-
-
-if __name__ == "__main__":
-    import sys
-
-    days = int(sys.argv[1]) if len(sys.argv) > 1 else 90
-    main(days)
