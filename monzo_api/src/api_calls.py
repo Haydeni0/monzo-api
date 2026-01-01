@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 
 from monzo_api.src.models import Account, Balance, MonzoExport, Pot, Transaction
-from monzo_api.src.utils import create_client, load_token
+from monzo_api.src.utils import monzo_client
 
 CHUNK_SIZE_DAYS = 364  # Monzo API limit is 365 days
 
@@ -181,33 +181,29 @@ def export(days: int | None = None) -> MonzoExport:
     else:
         print("Fetching full transaction history\n")
 
-    token = load_token()
-    client = create_client(token)  # TODO: context manager
+    with monzo_client() as client:
+        # Accounts
+        accounts = fetch_accounts(client)
+        active = [a for a in accounts if not a.closed]
+        print(f"Accounts: {len(accounts)} ({len(active)} active)")
 
-    # Accounts
-    accounts = fetch_accounts(client)
-    active = [a for a in accounts if not a.closed]
-    print(f"Accounts: {len(accounts)} ({len(active)} active)")
+        # Pots
+        pots: list[Pot] = []
+        for acc in active:
+            pots.extend(fetch_pots(client, acc.id))
+        print(f"Pots: {len(pots)}")
 
-    # Pots
-    pots: list[Pot] = []
-    for acc in active:
-        pots.extend(fetch_pots(client, acc.id))
-    print(f"Pots: {len(pots)}")
+        # Transactions
+        transactions: dict[str, list[Transaction]] = {}
+        print("\nTransactions:")
+        for acc in active:
+            print(f"  {acc.type}:")
+            txs = fetch_transactions(client, acc, days)
+            transactions[acc.id] = txs
+            print(f"    {len(txs)} transactions")
 
-    # Transactions
-    transactions: dict[str, list[Transaction]] = {}
-    print("\nTransactions:")
-    for acc in active:
-        print(f"  {acc.type}:")
-        txs = fetch_transactions(client, acc, days)
-        transactions[acc.id] = txs
-        print(f"    {len(txs)} transactions")
-
-    total = sum(len(t) for t in transactions.values())
-    print(f"\nTotal: {total} transactions")
-
-    client.close()
+        total = sum(len(t) for t in transactions.values())
+        print(f"\nTotal: {total} transactions")
 
     return MonzoExport(
         exported_at=datetime.now(UTC),
