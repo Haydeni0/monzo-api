@@ -28,7 +28,7 @@ MONZO_CLIENT_SECRET=mnzconf.xxx
 
 ```bash
 monzo auth            # authenticate, approve in Monzo app
-monzo export          # export full history (uses backward pagination)
+monzo export          # export full history (yearly chunks, verifies balances)
 monzo ingest          # import JSON into DuckDB
 ```
 
@@ -87,6 +87,12 @@ with db as conn:
         LIMIT 10
     """).fetchall()
 ```
+
+## Analysis
+
+Run `analysis/eda.py` (IPython notebook-style) to generate:
+- `analysis/balance_overview.html` - interactive Plotly chart
+- `analysis/daily_balances.csv` - daily balance data
 
 ## Documentation
 
