@@ -21,10 +21,26 @@ MONZO_CLIENT_ID=oauth2client_xxx
 MONZO_CLIENT_SECRET=mnzconf.xxx
 ```
 
-## Get Access Token
+## CLI
+
+After setup, the `monzo` command is available:
 
 ```bash
-python src/get_token.py
+monzo --help          # Show all commands
+monzo status          # Show token, cache, and database status
+monzo auth            # Authenticate with Monzo
+monzo auth --force    # Force new authentication
+monzo export          # Export data to JSON cache
+monzo export --full   # Fresh auth + export (for full history)
+monzo db              # Setup DuckDB database
+monzo db --stats      # Show database row counts
+monzo db --reset      # Drop and recreate tables
+```
+
+## Authentication
+
+```bash
+monzo auth
 ```
 
 This will:
@@ -35,7 +51,17 @@ This will:
 
 **Important:** After running, open the Monzo app and approve the access request.
 
-Token expires after ~6 hours. Run the script again to auto-refresh (confidential clients) or re-authenticate.
+Token expires after ~6 hours. Run `monzo auth` again to refresh.
+
+### Full Transaction History
+
+Monzo limits transaction history to 90 days after 5 minutes of authentication. To get your full history:
+
+```bash
+monzo export --full
+```
+
+This forces fresh authentication and immediately exports. Run within 5 minutes of approving in the app.
 
 ## Documentation
 

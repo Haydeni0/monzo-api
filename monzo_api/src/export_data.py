@@ -19,9 +19,8 @@ from datetime import datetime
 
 import httpx
 
-from utils import PROJECT_ROOT, create_client, load_token
-
-CACHE_FILE = PROJECT_ROOT / ".monzo_data.json"
+from monzo_api.src.config import CACHE_FILE
+from monzo_api.src.utils import create_client, load_token
 
 
 def load_cache() -> dict:

@@ -21,7 +21,8 @@ from typing import Any
 
 import httpx
 
-from utils import API_URL, AUTH_URL, TOKEN_FILE, load_env_secrets, load_token_data, save_token
+from monzo_api.src.config import API_URL, AUTH_URL, TOKEN_FILE
+from monzo_api.src.utils import load_env_secrets, load_token_data, save_token
 
 load_env_secrets()
 

@@ -2,16 +2,10 @@
 
 import json
 import os
-from pathlib import Path
 
 import httpx
 
-PROJECT_ROOT = Path(__file__).parent.parent
-TOKEN_FILE = PROJECT_ROOT / ".monzo_token.json"
-ENV_SECRETS_FILE = PROJECT_ROOT / ".env.secrets"
-
-API_URL = "https://api.monzo.com"
-AUTH_URL = "https://auth.monzo.com"
+from monzo_api.src.config import API_URL, ENV_SECRETS_FILE, TOKEN_FILE
 
 
 def load_env_secrets() -> None:
@@ -39,7 +33,7 @@ def load_token() -> str:
     """
     data = load_token_data()
     if not data:
-        msg = f"Token file not found: {TOKEN_FILE}\nRun: python src/get_token.py"
+        msg = f"Token file not found: {TOKEN_FILE}\nRun: monzo auth"
         raise FileNotFoundError(msg)
     return data["access_token"]
 
