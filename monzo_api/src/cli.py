@@ -3,13 +3,14 @@
 import json
 
 import typer
+from rich.table import Table
 
 from monzo_api.src.api_calls import export as export_data
 from monzo_api.src.api_calls import fetch_accounts, fetch_balance
 from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
 from monzo_api.src.database import MonzoDatabase
 from monzo_api.src.get_token import token_oauth
-from monzo_api.src.utils import load_token, load_token_data, monzo_client
+from monzo_api.src.utils import console, load_token_data, monzo_client
 
 app = typer.Typer(help="Monzo API tools for exporting and analyzing your data.")
 
@@ -21,25 +22,31 @@ def auth(
     """Authenticate with Monzo and get an access token."""
     if force and TOKEN_FILE.exists():
         TOKEN_FILE.unlink()
-        typer.echo("Removed existing token.")
+        console.print("[yellow]Removed existing token.[/yellow]")
 
     token_oauth()
 
 
 def _verify_balances(api_balances: dict[str, float], db_balances: dict[str, float]) -> bool:
-    typer.echo("Balance verification:")
+    """Verify API balances match database. Returns True if all OK."""
     all_ok = True
     for acc_id, api_bal in api_balances.items():
         db_bal = db_balances.get(acc_id, 0.0)
         diff = api_bal - db_bal
         if abs(diff) >= 0.01:
-            typer.echo(
-                f"  {acc_id}: MISMATCH (API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f})"
+            console.print(
+                f"[red]MISMATCH[/red] {acc_id[:20]}: API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f}"
             )
             all_ok = False
 
-    if not all_ok:
-        typer.echo("\n  Warning: Balance mismatch may indicate missing transactions")
+    if all_ok:
+        console.print("[green]Balance verification OK[/green]")
+    else:
+        console.print(
+            "\n[yellow]Warning: Balance mismatch may indicate missing transactions."
+            " Full export may be required (`monzo export`)[/yellow]"
+        )
+    return all_ok
 
 
 @app.command()
@@ -56,10 +63,10 @@ def export(
     """
     results = export_data(days)
     results.save(CACHE_FILE)
-    typer.echo(f"Saved to {CACHE_FILE}")
+    console.print(f"Saved to [cyan]{CACHE_FILE}[/cyan]")
 
     if no_ingest:
-        typer.echo("Skipping database ingest (--no-ingest)")
+        console.print("[dim]Skipping database ingest (--no-ingest)[/dim]")
         return
 
     database = MonzoDatabase()
@@ -93,12 +100,12 @@ def db(
         if confirm:
             database.reset()
         else:
-            typer.echo("Aborted.")
+            console.print("[dim]Aborted.[/dim]")
             raise typer.Exit(1)
     elif stats:
         database.print_stats()
     else:
-        typer.echo("Ensuring database schema...")
+        console.print("[dim]Ensuring database schema...[/dim]")
         database.setup()
         database.print_stats()
 
@@ -106,41 +113,45 @@ def db(
 @app.command()
 def status() -> None:
     """Show current authentication and cache status."""
-    typer.echo("Monzo API Status\n")
+    console.print("[bold]Monzo API Status[/bold]\n")
 
     # Token status
     token_data = load_token_data()
     if token_data:
-        typer.echo(f"  Token: Found ({TOKEN_FILE.name})")
+        console.print(f"  [green]Token:[/green] {TOKEN_FILE.name}")
         if "access_token" in token_data:
-            typer.echo(f"         {token_data['access_token'][:30]}...")
+            console.print(f"         [dim]{token_data['access_token'][:30]}...[/dim]")
     else:
-        typer.echo("  Token: Not found")
+        console.print("  [red]Token:[/red] Not found")
 
     # Cache status
     if CACHE_FILE.exists():
         cache = json.loads(CACHE_FILE.read_text())
         tx_count = sum(len(txs) for txs in cache.get("transactions", {}).values())
-        typer.echo(f"\n  Cache: {CACHE_FILE.name}")
-        typer.echo(f"         Accounts: {len(cache.get('accounts', []))}")
-        typer.echo(f"         Pots: {len(cache.get('pots', []))}")
-        typer.echo(f"         Transactions: {tx_count}")
+        console.print(f"\n  [green]Cache:[/green] {CACHE_FILE.name}")
+        console.print(f"         Accounts: {len(cache.get('accounts', []))}")
+        console.print(f"         Pots: {len(cache.get('pots', []))}")
+        console.print(f"         Transactions: {tx_count}")
         if cache.get("exported_at"):
-            typer.echo(f"         Exported: {cache['exported_at'][:19]}")
+            console.print(f"         Exported: {cache['exported_at'][:19]}")
         if cache.get("days"):
-            typer.echo(f"         Days: {cache['days']}")
+            console.print(f"         Days: {cache['days']}")
     else:
-        typer.echo("\n  Cache: Not found")
+        console.print("\n  [red]Cache:[/red] Not found")
 
     # Database status
     if DB_FILE.exists():
         database = MonzoDatabase()
         db_stats = database.stats()
-        typer.echo(f"\n  Database: {DB_FILE.name}")
-        for table, count in db_stats.items():
-            typer.echo(f"            {table}: {count}")
+        table = Table(title="Database", show_header=True, header_style="bold")
+        table.add_column("Table")
+        table.add_column("Rows", justify="right")
+        for tbl, count in db_stats.items():
+            table.add_row(tbl, str(count))
+        console.print()
+        console.print(table)
     else:
-        typer.echo("\n  Database: Not found")
+        console.print("\n  [red]Database:[/red] Not found")
 
 
 if __name__ == "__main__":

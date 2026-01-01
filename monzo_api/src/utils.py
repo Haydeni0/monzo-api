@@ -2,12 +2,16 @@
 
 import json
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 import httpx
+from rich.console import Console
 
 from monzo_api.src.config import API_URL, ENV_SECRETS_FILE, TOKEN_FILE
+
+# Shared console for all output
+console = Console()
 
 
 def load_env_secrets() -> None:
