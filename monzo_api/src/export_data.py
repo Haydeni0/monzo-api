@@ -6,12 +6,12 @@ Usage:
     python -m monzo_api.src.export_data [--days 89]
 """
 
-import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
 
 from monzo_api.src.config import CACHE_FILE
+from monzo_api.src.models import Account, MonzoExport, Pot, Transaction
 from monzo_api.src.utils import create_client, load_token
 
 
@@ -26,33 +26,33 @@ class SCAExpiredError(Exception):
         """Initialize with helpful message."""
         super().__init__(
             "SCA expired - can only access last 89 days.\n"
-            "After 5 minutes of auth, Monzo limits transaction history.\n"
-            "Run 'monzo auth --force' then immediately 'monzo export -d <days>' for full history.\n"
+            "After 5 minutes of auth, Monzo limits transaction history to 89 days.\n"
+            "Run 'monzo auth --force' to reauthenticate for full history (for 5 minutes).\n"
             "Docs: https://docs.monzo.com/#list-transactions"
         )
 
 
-def fetch_accounts(client: httpx.Client) -> list[dict]:
+def fetch_accounts(client: httpx.Client) -> list[Account]:
     """Fetch all accounts."""
     resp = client.get("/accounts")
     resp.raise_for_status()
-    return resp.json()["accounts"]
+    return [Account.model_validate(a) for a in resp.json()["accounts"]]
 
 
-def fetch_pots(client: httpx.Client, account_id: str) -> list[dict]:
+def fetch_pots(client: httpx.Client, account_id: str) -> list[Pot]:
     """Fetch pots for an account."""
     resp = client.get("/pots", params={"current_account_id": account_id})
     resp.raise_for_status()
-    return resp.json()["pots"]
+    return [Pot.model_validate(p) for p in resp.json()["pots"]]
 
 
 def fetch_transactions(
     client: httpx.Client,
     account_id: str,
     since: str,
-) -> list[dict]:
+) -> list[Transaction]:
     """Fetch transactions for an account, paginating forward from `since`."""
-    all_txs = []
+    all_txs: list[Transaction] = []
     cursor = since
 
     while True:
@@ -63,13 +63,14 @@ def fetch_transactions(
             raise SCAExpiredError
 
         resp.raise_for_status()
-        txs = resp.json().get("transactions", [])
+        txs_raw = resp.json().get("transactions", [])
 
-        if not txs:
+        if not txs_raw:
             break
 
+        txs = [Transaction.model_validate(t) for t in txs_raw]
         all_txs.extend(txs)
-        cursor = txs[-1]["id"]
+        cursor = txs[-1].id
 
         if len(all_txs) % 1000 < 100:
             print(f"    {len(all_txs)}...")
@@ -77,8 +78,8 @@ def fetch_transactions(
     return all_txs
 
 
-def export(days: int = 89) -> dict:
-    """Export Monzo data to dict."""
+def export(days: int = 89) -> MonzoExport:
+    """Export Monzo data."""
     since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"Fetching data since {since[:10]} ({days} days)\n")
 
@@ -87,22 +88,22 @@ def export(days: int = 89) -> dict:
 
     # Accounts
     accounts = fetch_accounts(client)
-    active = [a for a in accounts if not a.get("closed")]
+    active = [a for a in accounts if not a.closed]
     print(f"Accounts: {len(accounts)} ({len(active)} active)")
 
     # Pots
-    pots = []
+    pots: list[Pot] = []
     for acc in active:
-        pots.extend(fetch_pots(client, acc["id"]))
+        pots.extend(fetch_pots(client, acc.id))
     print(f"Pots: {len(pots)}")
 
     # Transactions
-    transactions = {}
+    transactions: dict[str, list[Transaction]] = {}
     print("\nTransactions:")
     for acc in active:
-        print(f"  {acc['type']}:")
-        txs = fetch_transactions(client, acc["id"], since)
-        transactions[acc["id"]] = txs
+        print(f"  {acc.type}:")
+        txs = fetch_transactions(client, acc.id, since)
+        transactions[acc.id] = txs
         print(f"    {len(txs)} transactions")
 
     client.close()
@@ -110,18 +111,18 @@ def export(days: int = 89) -> dict:
     total = sum(len(t) for t in transactions.values())
     print(f"\nTotal: {total} transactions")
 
-    return {
-        "exported_at": datetime.now(UTC).isoformat(),
-        "since": since,
-        "days": days,
-        "accounts": accounts,
-        "pots": pots,
-        "transactions": transactions,
-    }
+    return MonzoExport(
+        exported_at=datetime.now(UTC),
+        since=since,
+        days=days,
+        accounts=accounts,
+        pots=pots,
+        transactions=transactions,
+    )
 
 
 def main(days: int = 89) -> None:
     """Export and save to JSON."""
     data = export(days)
-    CACHE_FILE.write_text(json.dumps(data, indent=2))
+    data.save(CACHE_FILE)
     print(f"\nSaved to {CACHE_FILE}")
