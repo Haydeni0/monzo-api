@@ -27,26 +27,13 @@ def auth(
 
 @app.command()
 def export(
-    full: bool = typer.Option(
-        False, "--full", "-f", help="Force fresh auth for full history (>90 days)"
-    ),
+    days: int = typer.Option(90, "--days", "-d", help="Number of days of history to fetch"),
 ) -> None:
-    """Export all Monzo data to JSON cache.
+    """Export Monzo data to JSON.
 
-    Run within 5 minutes of fresh authentication to get full transaction history.
-    After 5 mins, API limits to last 90 days only.
+    Default 90 days. Use more days after fresh auth (within 5 min window).
     """
-    if full:
-        if TOKEN_FILE.exists():
-            TOKEN_FILE.unlink()
-            typer.echo("Removed existing token for fresh auth.\n")
-
-        get_token_main()
-        typer.echo("\n" + "=" * 50)
-        typer.echo("Now run export within 5 minutes!")
-        typer.echo("=" * 50 + "\n")
-
-    export_main()
+    export_main(days)
 
 
 @app.command()
@@ -91,11 +78,12 @@ def status() -> None:
         tx_count = sum(len(txs) for txs in cache.get("transactions", {}).values())
         typer.echo(f"\n  Cache: {CACHE_FILE.name}")
         typer.echo(f"         Accounts: {len(cache.get('accounts', []))}")
-        typer.echo(f"         Transactions: {tx_count}")
-        typer.echo(f"         Merchants: {len(cache.get('merchants', {}))}")
         typer.echo(f"         Pots: {len(cache.get('pots', []))}")
-        if cache.get("last_updated"):
-            typer.echo(f"         Last updated: {cache['last_updated'][:19]}")
+        typer.echo(f"         Transactions: {tx_count}")
+        if cache.get("exported_at"):
+            typer.echo(f"         Exported: {cache['exported_at'][:19]}")
+        if cache.get("days"):
+            typer.echo(f"         Days: {cache['days']}")
     else:
         typer.echo("\n  Cache: Not found")
 
