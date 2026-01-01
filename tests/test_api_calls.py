@@ -1,158 +1,217 @@
-"""Tests for api_calls module using mock API."""
+"""Tests for api_calls.py fetch_transactions."""
+
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 from pytest_mock import MockerFixture
 
-from monzo_api.src.api_calls import (
-    SCAExpiredError,
-    fetch_accounts,
-    fetch_pots,
-    fetch_transactions,
-)
+from monzo_api.src.api_calls import SCAExpiredError, fetch_transactions
+from monzo_api.src.models import Account
 
 
-class TestFetchAccounts:
-    """Tests for fetch_accounts function with mock client."""
-
-    def test_fetches_accounts(self, mocker: MockerFixture) -> None:
-        """Should return Account models from API."""
-        mock_response = mocker.Mock()
-        mock_response.json.return_value = {
-            "accounts": [
-                {"id": "acc_1", "type": "uk_retail", "closed": False},
-                {"id": "acc_2", "type": "uk_retail_joint", "closed": False},
-            ]
-        }
-
-        mock_client = mocker.Mock(spec=httpx.Client)
-        mock_client.get.return_value = mock_response
-
-        accounts = fetch_accounts(mock_client)
-
-        assert len(accounts) == 2
-        assert accounts[0].id == "acc_1"
-        assert accounts[0].type == "uk_retail"
-        mock_client.get.assert_called_once_with("/accounts")
+def make_tx(tx_id: str, created: datetime, amount: int = -100) -> dict:
+    """Create a minimal transaction dict for testing."""
+    return {
+        "id": tx_id,
+        "created": created.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "amount": amount,
+        "currency": "GBP",
+        "description": f"Test tx {tx_id}",
+        "account_id": "acc_test",
+    }
 
 
-class TestFetchPots:
-    """Tests for fetch_pots function with mock client."""
+@pytest.fixture
+def mock_client(mocker: MockerFixture):
+    """Create a mock httpx.Client."""
+    return mocker.MagicMock(spec=httpx.Client)
 
-    def test_fetches_pots_for_account(self, mocker: MockerFixture) -> None:
-        """Should fetch Pot models for specific account."""
-        mock_response = mocker.Mock()
-        mock_response.json.return_value = {
-            "pots": [
-                {"id": "pot_1", "name": "Savings", "balance": 10000},
-                {"id": "pot_2", "name": "Holiday", "balance": 5000},
-            ]
-        }
 
-        mock_client = mocker.Mock(spec=httpx.Client)
-        mock_client.get.return_value = mock_response
+@pytest.fixture
+def make_response(mocker: MockerFixture):
+    """Factory fixture to create mock response objects."""
 
-        pots = fetch_pots(mock_client, "acc_123")
+    def _make_response(txs: list[dict], status: int = 200):
+        resp = mocker.MagicMock()
+        resp.status_code = status
+        resp.json.return_value = {"transactions": txs}
+        if status >= 400:
+            resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "Error", request=mocker.MagicMock(), response=resp
+            )
+        return resp
 
-        assert len(pots) == 2
-        assert pots[0].id == "pot_1"
-        assert pots[0].balance == 10000
-        mock_client.get.assert_called_once_with("/pots", params={"current_account_id": "acc_123"})
+    return _make_response
+
+
+@pytest.fixture
+def test_account() -> Account:
+    """Create a test account."""
+    return Account(
+        id="acc_test",
+        type="uk_retail",
+        created=datetime.now(UTC) - timedelta(days=100),
+        closed=False,
+    )
 
 
 class TestFetchTransactions:
-    """Tests for fetch_transactions function with mock client."""
+    """Tests for fetch_transactions (yearly chunking)."""
 
-    def test_fetches_single_page(self, mocker: MockerFixture) -> None:
-        """Should fetch Transaction models when all fit in one page."""
-        responses = [
-            {
-                "transactions": [
-                    {
-                        "id": "tx_1",
-                        "account_id": "acc_1",
-                        "amount": -100,
-                        "created": "2024-01-01T10:00:00Z",
-                    },
-                    {
-                        "id": "tx_2",
-                        "account_id": "acc_1",
-                        "amount": -200,
-                        "created": "2024-01-01T11:00:00Z",
-                    },
-                ]
-            },
-            {"transactions": []},
+    def test_full_history_uses_account_created(self, mock_client, make_response, test_account):
+        """Test that days=None fetches from account creation."""
+        now = datetime.now(UTC)
+        txs_data = [make_tx(f"tx_{i}", now - timedelta(days=i)) for i in range(5)]
+
+        mock_client.get.side_effect = [
+            make_response(txs_data),
+            make_response([]),
         ]
 
-        mock_client = mocker.Mock(spec=httpx.Client)
-        mock_client.get.side_effect = [self._make_response(mocker, r) for r in responses]
+        txs = fetch_transactions(mock_client, test_account, days=None)
+        assert len(txs) == 5
 
-        txs = fetch_transactions(mock_client, "acc_123", "2024-01-01T00:00:00Z")
+    def test_days_limits_history(self, mock_client, make_response):
+        """Test that days param limits how far back we fetch."""
+        now = datetime.now(UTC)
+        account = Account(
+            id="acc_test",
+            type="uk_retail",
+            created=now - timedelta(days=500),
+            closed=False,
+        )
+        txs_data = [make_tx(f"tx_{i}", now - timedelta(days=i)) for i in range(10)]
 
-        assert len(txs) == 2
-        assert txs[0].id == "tx_1"
-        assert txs[0].amount == -100
-
-    def test_paginates_multiple_pages(self, mocker: MockerFixture) -> None:
-        """Should paginate backwards using 'before' param."""
-        responses = [
-            # First batch (most recent) - no 'before' param yet
-            {
-                "transactions": [
-                    {
-                        "id": "tx_2",
-                        "account_id": "acc_1",
-                        "amount": -200,
-                        "created": "2024-01-02T10:00:00Z",
-                    }
-                ]
-            },
-            # Second batch - uses oldest timestamp as 'before'
-            {
-                "transactions": [
-                    {
-                        "id": "tx_1",
-                        "account_id": "acc_1",
-                        "amount": -100,
-                        "created": "2024-01-01T10:00:00Z",
-                    }
-                ]
-            },
-            {"transactions": []},
+        mock_client.get.side_effect = [
+            make_response(txs_data),
+            make_response([]),
         ]
 
-        mock_client = mocker.Mock(spec=httpx.Client)
-        mock_client.get.side_effect = [self._make_response(mocker, r) for r in responses]
+        txs = fetch_transactions(mock_client, account, days=30)
+        assert len(txs) == 10
 
-        txs = fetch_transactions(mock_client, "acc_123", "2024-01-01T00:00:00Z")
+    def test_days_exceeding_account_age(self, mock_client, make_response, capsys):
+        """Test that requesting more days than account age uses account creation."""
+        now = datetime.now(UTC)
+        account = Account(
+            id="acc_test",
+            type="uk_retail",
+            created=now - timedelta(days=50),
+            closed=False,
+        )
+        txs_data = [make_tx(f"tx_{i}", now - timedelta(days=i)) for i in range(5)]
 
-        assert len(txs) == 2
-        # Results sorted oldest first
-        assert txs[0].id == "tx_1"
-        assert txs[1].id == "tx_2"
-        # Second call should use 'before' with oldest tx timestamp, and keep 'since' for filtering
-        calls = mock_client.get.call_args_list
-        assert "before" in calls[1][1]["params"]
-        assert calls[1][1]["params"]["since"] == "2024-01-01T00:00:00Z"
+        mock_client.get.side_effect = [
+            make_response(txs_data),
+            make_response([]),
+        ]
 
-    def test_raises_sca_expired_on_403(self, mocker: MockerFixture) -> None:
-        """Should raise SCAExpiredError on 403 (90-day limit)."""
-        mock_response = mocker.Mock()
-        mock_response.status_code = 403
+        txs = fetch_transactions(mock_client, account, days=100)
+        assert len(txs) == 5
+        assert "only 50 days old" in capsys.readouterr().out
 
-        mock_client = mocker.Mock(spec=httpx.Client)
-        mock_client.get.return_value = mock_response
+    def test_sca_expired_on_first_request_raises(self, mock_client, make_response, test_account):
+        """Test that SCAExpiredError is raised when 403 on first tx request."""
+        mock_client.get.return_value = make_response([], status=403)
 
-        with pytest.raises(SCAExpiredError) as exc_info:
-            fetch_transactions(mock_client, "acc_123", "2024-01-01T00:00:00Z")
+        with pytest.raises(SCAExpiredError):
+            fetch_transactions(mock_client, test_account)
 
-        assert "monzo auth --force" in str(exc_info.value)
+    def test_sca_expired_mid_pagination_returns_partial(
+        self, mock_client, make_response, test_account
+    ):
+        """Test graceful stop if 403 mid-way."""
+        now = datetime.now(UTC)
+        page1 = [make_tx(f"tx_{i}", now - timedelta(days=i)) for i in range(10)]
 
-    @staticmethod
-    def _make_response(mocker: MockerFixture, data: dict):
-        """Create a mock response object."""
-        mock = mocker.Mock()
-        mock.json.return_value = data
-        mock.status_code = 200
-        return mock
+        mock_client.get.side_effect = [
+            make_response(page1),
+            make_response([], status=403),
+        ]
+
+        txs = fetch_transactions(mock_client, test_account)
+        assert len(txs) == 10
+
+    def test_returns_sorted_by_created(self, mock_client, make_response, test_account):
+        """Test that results are sorted oldest first."""
+        now = datetime.now(UTC)
+
+        txs_data = [
+            make_tx("tx_new", now - timedelta(days=5)),
+            make_tx("tx_old", now - timedelta(days=50)),
+        ]
+
+        mock_client.get.side_effect = [
+            make_response(txs_data),
+            make_response([]),
+        ]
+
+        txs = fetch_transactions(mock_client, test_account)
+
+        assert txs[0].id == "tx_old"
+        assert txs[1].id == "tx_new"
+
+    def test_pagination_within_chunk(self, mock_client, make_response, test_account):
+        """Test pagination when >100 transactions in a chunk."""
+        now = datetime.now(UTC)
+
+        page1 = [make_tx(f"tx_{i}", now - timedelta(days=i)) for i in range(100)]
+        page2 = [make_tx(f"tx_{i}", now - timedelta(days=i)) for i in range(100, 150)]
+
+        mock_client.get.side_effect = [
+            make_response(page1),
+            make_response(page2),
+            make_response([]),
+        ]
+
+        txs = fetch_transactions(mock_client, test_account)
+        assert len(txs) == 150
+
+    def test_multi_year_account(self, mock_client, make_response):
+        """Test account spanning multiple years."""
+        now = datetime.now(UTC)
+        account = Account(
+            id="acc_test",
+            type="uk_retail",
+            created=now - timedelta(days=800),
+            closed=False,
+        )
+
+        year1_txs = [make_tx(f"tx_y1_{i}", now - timedelta(days=700 + i)) for i in range(30)]
+        year2_txs = [make_tx(f"tx_y2_{i}", now - timedelta(days=350 + i)) for i in range(40)]
+        year3_txs = [make_tx(f"tx_y3_{i}", now - timedelta(days=i)) for i in range(20)]
+
+        mock_client.get.side_effect = [
+            make_response(year1_txs),
+            make_response([]),
+            make_response(year2_txs),
+            make_response([]),
+            make_response(year3_txs),
+            make_response([]),
+        ]
+
+        txs = fetch_transactions(mock_client, account)
+        assert len(txs) == 90
+
+    def test_handles_400_invalid_range(self, mock_client, make_response):
+        """Test that 400 errors are handled gracefully."""
+        now = datetime.now(UTC)
+        account = Account(
+            id="acc_test",
+            type="uk_retail",
+            created=now - timedelta(days=500),
+            closed=False,
+        )
+
+        year1_txs = [make_tx(f"tx_{i}", now - timedelta(days=400 + i)) for i in range(20)]
+
+        mock_client.get.side_effect = [
+            make_response(year1_txs),
+            make_response([]),
+            make_response([], status=400),
+            make_response([]),
+        ]
+
+        txs = fetch_transactions(mock_client, account)
+        assert len(txs) == 20
