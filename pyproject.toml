@@ -4,4 +4,66 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "httpx>=0.27",
+    "ruff>=0.14.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# List of Ruff rules to enable (https://docs.astral.sh/ruff/rules/)
+select = [
+    "C4",  # flake8-comprehensions
+    "C90", # mccabe (complexity)
+    "D",   # docstring
+    "E",   # pycodestyle (error)
+    "F",   # pyflakes (syntax)
+    "I",   # isort (imports)
+    "N",   # pep8-naming
+    "PL",  # pylint
+    "W",   # pycodestyle (warning)
+    # Not in product:
+    "A",      # flake8-builtins
+    "T10",    # flake8-debugger
+    "UP",     # pyupgrade
+    "YTT",    # flake8-2020
+    "S",      # flake8-bandit
+    "B",      # flake8-bugbear
+    "RUF1",   # RUF100-RUF102 ("noqa" checks)
+    "RUF200", # Checks if pyproject is valid
+    "PGH",    # pygrep-hooks
+]
+ignore = [
+    "E501",    # LineTooLong (mainly for docstrings)
+    "B905",    # Zip without explicit strict
+    "PLR2004", # Magic values
+    "S101",    # No assert
+    "PGH003",  # Use specific rule codes when ignoring type issues
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S603", "D", "E", "W", "PLR0913", "N803", "N806"]
+"*.ipynb" = ["ALL"]
+"**/__init__.py" = [
+    "F401", # Unused imports (imports in __init__.py are often for re-exporting)
+    "F403", # Wildcard imports `from module import *` (common in __init__.py)
+    "F405", # Name may be undefined from star imports
+    "E402", # Module level import not at top of file (sometimes needed for circular import fixes)
+    "D104", # Missing docstring in public package (if using pydocstyle rules)
+]
+
+[tool.ruff.lint.pylint]
+max-args = 8
+
+[tool.ruff.lint.mccabe]
+max-complexity = 11
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+# Use `\n` line endings for all files
+line-ending = "lf"
