@@ -231,7 +231,7 @@ class MonzoDatabase:
         """Create all tables, views, and indexes."""
         with self as conn:
             conn.execute(SCHEMA)
-        print(f"✓ Database setup complete: {self.db_path}")
+        print(f"Database setup complete: {self.db_path}")
 
     def reset(self) -> None:
         """Drop all tables and recreate."""
@@ -242,7 +242,7 @@ class MonzoDatabase:
             conn.execute("DROP TABLE IF EXISTS merchants")
             conn.execute("DROP TABLE IF EXISTS accounts")
             conn.execute(SCHEMA)
-        print(f"✓ Database reset complete: {self.db_path}")
+        print(f"Database reset complete: {self.db_path}")
 
     def stats(self) -> dict[str, int]:
         """Get row counts for all tables and views."""
@@ -255,24 +255,8 @@ class MonzoDatabase:
 
     def print_stats(self) -> None:
         """Print database statistics."""
-        print("\n📊 Database Statistics")
+        print("\nDatabase Statistics")
         print("=" * 30)
         for table, count in self.stats().items():
             print(f"  {table:20} {count:>6} rows")
         print()
-
-
-if __name__ == "__main__":
-    import sys
-
-    db = MonzoDatabase()
-
-    if len(sys.argv) > 1 and sys.argv[1] == "--reset":
-        confirm = input("This will DELETE all data. Type 'yes' to confirm: ")
-        if confirm == "yes":
-            db.reset()
-        else:
-            print("Aborted.")
-    else:
-        db.setup()
-        db.print_stats()

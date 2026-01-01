@@ -13,29 +13,15 @@ Usage:
 """
 
 import http.server
-import json
 import os
 import secrets
 import urllib.parse
 import webbrowser
-from pathlib import Path
 from typing import Any
 
 import httpx
 
-PROJECT_ROOT = Path(__file__).parent.parent
-
-
-def load_env_secrets() -> None:
-    """Load variables from .env.secrets file."""
-    env_file = PROJECT_ROOT / ".env.secrets"
-    if env_file.exists():
-        for raw_line in env_file.read_text().splitlines():
-            line = raw_line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
-
+from utils import API_URL, AUTH_URL, TOKEN_FILE, load_env_secrets, load_token_data, save_token
 
 load_env_secrets()
 
@@ -43,10 +29,6 @@ load_env_secrets()
 CLIENT_ID = os.environ.get("MONZO_CLIENT_ID", "YOUR_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("MONZO_CLIENT_SECRET", "YOUR_CLIENT_SECRET")
 REDIRECT_URI = "http://localhost:8080/callback"
-TOKEN_FILE = PROJECT_ROOT / ".monzo_token.json"
-
-AUTH_URL = "https://auth.monzo.com"
-API_URL = "https://api.monzo.com"
 
 
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
@@ -148,19 +130,6 @@ def refresh_token(refresh_token: str) -> dict:
         return resp.json()
 
 
-def save_token(token_data: dict) -> None:
-    """Save token to file."""
-    TOKEN_FILE.write_text(json.dumps(token_data, indent=2))
-    print(f"Token saved to {TOKEN_FILE}")
-
-
-def load_token() -> dict | None:
-    """Load token from file if exists."""
-    if TOKEN_FILE.exists():
-        return json.loads(TOKEN_FILE.read_text())
-    return None
-
-
 def test_token(access_token: str) -> bool:
     """Test if token is valid."""
     with httpx.Client() as client:
@@ -170,7 +139,7 @@ def test_token(access_token: str) -> bool:
         )
         if resp.status_code == 200:
             data = resp.json()
-            print(f"✓ Token valid - User: {data.get('user_id')}, Client: {data.get('client_id')}")
+            print(f"Token valid - User: {data.get('user_id')}, Client: {data.get('client_id')}")
             return True
         return False
 
@@ -188,7 +157,7 @@ def main() -> None:
         return
 
     # Try loading existing token
-    existing = load_token()
+    existing = load_token_data()
     if existing:
         print("Found existing token, testing...")
         if test_token(existing["access_token"]):
@@ -201,7 +170,9 @@ def main() -> None:
             try:
                 token_data = refresh_token(existing["refresh_token"])
                 save_token(token_data)
-                print("\n✓ Token refreshed!")
+                print(f"Token saved to {TOKEN_FILE}")
+
+                print("\nToken refreshed!")
                 print(f"Access token: {token_data['access_token'][:20]}...")
                 return
             except httpx.HTTPStatusError:
@@ -214,10 +185,11 @@ def main() -> None:
     print("Exchanging for access token...")
     token_data = exchange_code_for_token(auth_code)
     save_token(token_data)
+    print(f"Token saved to {TOKEN_FILE}")
 
     print()
     print("=" * 50)
-    print("⚠️  IMPORTANT: Open Monzo app and approve the access request!")
+    print("IMPORTANT: Open Monzo app and approve the access request!")
     print("=" * 50)
     print()
     print(f"Access token: {token_data['access_token']}")
