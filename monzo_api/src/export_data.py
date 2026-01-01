@@ -56,7 +56,7 @@ def fetch_transactions(
     """Fetch transactions using backward pagination with `before`.
 
     Uses `before` param to avoid the 365-day `since` limit.
-    Optionally stops at `since` date if provided.
+    When `since` is provided, includes it in API request (since+before works for any range).
     """
     all_txs: list[Transaction] = []
     before_cursor: str | None = None  # Start from now
@@ -69,6 +69,9 @@ def fetch_transactions(
         }
         if before_cursor:
             params["before"] = before_cursor
+        if since:
+            # Including both since+before avoids 365-day limit and stops at our boundary
+            params["since"] = since
 
         resp = client.get("/transactions", params=params)
         if resp.status_code == 403:
@@ -80,13 +83,6 @@ def fetch_transactions(
             break
 
         txs = [Transaction.model_validate(t) for t in txs_raw]
-
-        # Filter out transactions before our cutoff date
-        if since:
-            txs = [t for t in txs if t.created.isoformat() >= since]
-            if not txs:
-                break
-
         all_txs.extend(txs)
 
         # Set cursor to oldest transaction's timestamp for next page
@@ -95,10 +91,6 @@ def fetch_transactions(
 
         if len(all_txs) % 1000 < 100:
             print(f"    {len(all_txs)}...")
-
-        # If we filtered any out, we've hit the boundary
-        if since and len(txs) < len(txs_raw):
-            break
 
     # Sort oldest first (consistent with forward pagination)
     all_txs.sort(key=lambda t: t.created)
