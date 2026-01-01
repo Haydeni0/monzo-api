@@ -27,23 +27,27 @@ MONZO_CLIENT_SECRET=mnzconf.xxx
 ### Full History (default)
 
 ```bash
-monzo auth            # authenticate, approve in Monzo app
-monzo export          # export full history (yearly chunks, verifies balances)
-monzo ingest          # import JSON into DuckDB
+monzo auth --force    # fresh auth, approve in Monzo app
+monzo export          # export full history + import to DuckDB (run within 5 mins)
 ```
 
-### Quick Export (recent only)
+> **Note:** Monzo limits transaction history to 90 days after 5 minutes of authentication.
+> Use `--force` to get a fresh SCA window, then run `export` immediately.
+
+### Quick Export / Update
+
+For ≤90 days or updating existing data, you can use an existing token:
 
 ```bash
-monzo export -d 30    # only last 30 days
-monzo ingest          # import into database
+monzo auth            # reuse token if valid, or refresh
+monzo export -d 30    # recent transactions only
+monzo export          # or full history (upserts into database)
 ```
 
-### Updating Data
+### JSON Only (no database)
 
 ```bash
-monzo export          # fetch full history again
-monzo ingest          # upserts into database (existing data preserved)
+monzo export --no-ingest    # export to JSON only, skip database
 ```
 
 ## CLI Reference
@@ -53,10 +57,10 @@ monzo --help          # show all commands
 monzo status          # show token, cache, and database status
 monzo auth            # authenticate with Monzo
 monzo auth --force    # force new authentication
-monzo export          # export full history to JSON
+monzo export          # export full history + import to database
 monzo export -d 30    # export only last 30 days
-monzo ingest          # import JSON cache into DuckDB
-monzo db              # setup DuckDB database
+monzo export --no-ingest  # JSON only, skip database
+monzo db              # ensure database schema exists
 monzo db --stats      # show database row counts
 monzo db --reset      # drop and recreate tables
 ```

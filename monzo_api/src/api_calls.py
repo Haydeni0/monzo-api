@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from monzo_api.src.config import CACHE_FILE
 from monzo_api.src.models import Account, Balance, MonzoExport, Pot, Transaction
 from monzo_api.src.utils import create_client, load_token
 
@@ -236,10 +235,3 @@ def export(days: int | None = None) -> MonzoExport:
         pots=pots,
         transactions=transactions,
     )
-
-
-def main(days: int | None = None) -> None:
-    """Export and save to JSON."""
-    data = export(days)
-    data.save(CACHE_FILE)
-    print(f"\nSaved to {CACHE_FILE}")
