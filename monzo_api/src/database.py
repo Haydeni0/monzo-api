@@ -78,6 +78,7 @@ from pathlib import Path
 import duckdb
 
 from monzo_api.src.config import DB_FILE
+from monzo_api.src.models import Account, Merchant, MonzoExport, Pot, Transaction
 
 SCHEMA = """
 -- ============================================
@@ -91,8 +92,6 @@ CREATE TABLE IF NOT EXISTS accounts (
     description TEXT,
     created TIMESTAMP,
     closed BOOLEAN DEFAULT FALSE,
-    sort_code TEXT,
-    account_number TEXT,
     currency TEXT DEFAULT 'GBP'
 );
 
@@ -259,3 +258,151 @@ class MonzoDatabase:
         for table, count in self.stats().items():
             print(f"  {table:20} {count:>6} rows")
         print()
+
+    # ==========================================
+    # IMPORT METHODS
+    # ==========================================
+
+    def import_accounts(self, accounts: list[Account]) -> int:
+        """Import accounts into database. Returns count imported."""
+        with self as conn:
+            for acc in accounts:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO accounts
+                    (id, type, description, created, closed, currency)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        acc.id,
+                        acc.type,
+                        acc.description,
+                        acc.created,
+                        acc.closed,
+                        acc.currency,
+                    ),
+                )
+        return len(accounts)
+
+    def import_merchants(self, merchants: dict[str, Merchant]) -> int:
+        """Import merchants into database. Returns count imported."""
+        with self as conn:
+            for m in merchants.values():
+                addr = m.address
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO merchants
+                    (id, group_id, name, category, emoji, logo_url, online, atm,
+                     address, city, region, country, postcode, latitude, longitude)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        m.id,
+                        m.group_id,
+                        m.name,
+                        m.category,
+                        m.emoji,
+                        m.logo,
+                        m.online,
+                        m.atm,
+                        addr.formatted if addr else None,
+                        addr.city if addr else None,
+                        addr.region if addr else None,
+                        addr.country if addr else None,
+                        addr.postcode if addr else None,
+                        addr.latitude if addr else None,
+                        addr.longitude if addr else None,
+                    ),
+                )
+        return len(merchants)
+
+    def import_transactions(self, transactions: list[Transaction]) -> int:
+        """Import transactions into database. Returns count imported."""
+        with self as conn:
+            for tx in transactions:
+                # Handle settled being empty string
+                settled = tx.settled if tx.settled and tx.settled != "" else None
+
+                # Extract MCC from metadata
+                mcc = tx.metadata.get("mcc") if tx.metadata else None
+
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO transactions
+                    (id, account_id, merchant_id, created, settled, amount, currency,
+                     local_amount, local_currency, description, category, notes,
+                     mcc, scheme, is_load, include_in_spending, decline_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tx.id,
+                        tx.account_id,
+                        tx.merchant_id,
+                        tx.created,
+                        settled,
+                        tx.amount,
+                        tx.currency,
+                        tx.local_amount,
+                        tx.local_currency,
+                        tx.description,
+                        tx.category,
+                        tx.notes,
+                        mcc,
+                        tx.scheme,
+                        tx.is_load,
+                        tx.include_in_spending,
+                        tx.decline_reason,
+                    ),
+                )
+        return len(transactions)
+
+    def import_pots(self, pots: list[Pot]) -> int:
+        """Import pots into database. Returns count imported."""
+        with self as conn:
+            for pot in pots:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO pots
+                    (id, account_id, name, style, balance, goal, currency, created, updated, deleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        pot.id,
+                        pot.current_account_id,
+                        pot.name,
+                        pot.style,
+                        pot.balance,
+                        pot.goal_amount,
+                        pot.currency,
+                        pot.created,
+                        pot.updated,
+                        pot.deleted,
+                    ),
+                )
+        return len(pots)
+
+    def import_data(self, data: MonzoExport) -> dict[str, int]:
+        """Import all data from a MonzoExport. Returns counts per table."""
+        # Ensure schema exists
+        self.setup()
+
+        counts = {}
+
+        # Import in dependency order
+        print("Importing accounts...")
+        counts["accounts"] = self.import_accounts(data.accounts)
+
+        print("Importing merchants...")
+        counts["merchants"] = self.import_merchants(data.all_merchants)
+
+        print("Importing transactions...")
+        counts["transactions"] = self.import_transactions(data.all_transactions)
+
+        print("Importing pots...")
+        counts["pots"] = self.import_pots(data.pots)
+
+        print("\nImport complete:")
+        for table, count in counts.items():
+            print(f"  {table}: {count}")
+
+        return counts

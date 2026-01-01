@@ -126,3 +126,7 @@ def main(days: int = 89) -> None:
     data = export(days)
     data.save(CACHE_FILE)
     print(f"\nSaved to {CACHE_FILE}")
+
+
+if __name__ == "__main__":
+    main()
