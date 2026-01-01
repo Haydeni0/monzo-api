@@ -233,3 +233,51 @@ class TestMonzoDatabase:
         assert stats["merchants"] == 1
         assert stats["transactions"] == 1
         assert stats["pots"] == 1
+
+    def test_import_is_idempotent(self, temp_db: Path) -> None:
+        """Importing same data twice should not create duplicates (upsert)."""
+        db = MonzoDatabase(temp_db)
+
+        export = MonzoExport(
+            exported_at=datetime.now(UTC),
+            accounts=[Account(id="acc_1", type="uk_retail")],
+            pots=[Pot(id="pot_1", name="Savings", balance=5000, current_account_id="acc_1")],
+            transactions={
+                "acc_1": [
+                    Transaction(
+                        id="tx_1",
+                        account_id="acc_1",
+                        amount=-100,
+                        created=datetime(2024, 1, 1, tzinfo=UTC),
+                        merchant=Merchant(id="merch_1", name="Shop"),
+                    ),
+                ]
+            },
+        )
+
+        # Import twice
+        db.import_data(export)
+        db.import_data(export)
+
+        # Should still only have 1 of each
+        stats = db.stats()
+        assert stats["accounts"] == 1
+        assert stats["merchants"] == 1
+        assert stats["transactions"] == 1
+        assert stats["pots"] == 1
+
+    def test_import_updates_existing_records(self, temp_db: Path) -> None:
+        """Importing with same ID should update existing record."""
+        db = MonzoDatabase(temp_db)
+        db.setup()
+
+        # First import
+        db.import_accounts([Account(id="acc_1", type="uk_retail", description="Old")])
+
+        # Second import with updated description
+        db.import_accounts([Account(id="acc_1", type="uk_retail", description="New")])
+
+        # Should have updated value
+        with db as conn:
+            row = conn.execute("SELECT description FROM accounts WHERE id = 'acc_1'").fetchone()
+            assert row[0] == "New"
