@@ -12,6 +12,6 @@ wheels/
 # Secrets
 .monzo_token.json
 .monzo_transactions.json
-.monzo_data.json
+.monzo_data.json*
 .monzo.duckdb
 .env.secrets
