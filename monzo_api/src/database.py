@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS pots (
 
 -- Daily balances (view - calculated from transactions)
 -- Shows cumulative balance at end of each day
+-- EXCLUDES declined transactions (decline_reason IS NOT NULL)
 CREATE OR REPLACE VIEW daily_balances AS
 WITH daily_totals AS (
     SELECT
@@ -180,6 +181,7 @@ WITH daily_totals AS (
         account_id,
         SUM(amount) as daily_net
     FROM transactions
+    WHERE decline_reason IS NULL  -- Exclude declined transactions
     GROUP BY 1, 2
 )
 SELECT
