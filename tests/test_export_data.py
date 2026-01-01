@@ -66,10 +66,22 @@ class TestFetchTransactions:
     def test_fetches_single_page(self, mocker: MockerFixture) -> None:
         """Should fetch Transaction models when all fit in one page."""
         responses = [
-            {"transactions": [
-                {"id": "tx_1", "account_id": "acc_1", "amount": -100, "created": "2024-01-01T10:00:00Z"},
-                {"id": "tx_2", "account_id": "acc_1", "amount": -200, "created": "2024-01-01T11:00:00Z"},
-            ]},
+            {
+                "transactions": [
+                    {
+                        "id": "tx_1",
+                        "account_id": "acc_1",
+                        "amount": -100,
+                        "created": "2024-01-01T10:00:00Z",
+                    },
+                    {
+                        "id": "tx_2",
+                        "account_id": "acc_1",
+                        "amount": -200,
+                        "created": "2024-01-01T11:00:00Z",
+                    },
+                ]
+            },
             {"transactions": []},
         ]
 
@@ -83,10 +95,30 @@ class TestFetchTransactions:
         assert txs[0].amount == -100
 
     def test_paginates_multiple_pages(self, mocker: MockerFixture) -> None:
-        """Should paginate through multiple pages."""
+        """Should paginate backwards using 'before' param."""
         responses = [
-            {"transactions": [{"id": "tx_1", "account_id": "acc_1", "amount": -100, "created": "2024-01-01T10:00:00Z"}]},
-            {"transactions": [{"id": "tx_2", "account_id": "acc_1", "amount": -200, "created": "2024-01-01T11:00:00Z"}]},
+            # First batch (most recent) - no 'before' param yet
+            {
+                "transactions": [
+                    {
+                        "id": "tx_2",
+                        "account_id": "acc_1",
+                        "amount": -200,
+                        "created": "2024-01-02T10:00:00Z",
+                    }
+                ]
+            },
+            # Second batch - uses oldest timestamp as 'before'
+            {
+                "transactions": [
+                    {
+                        "id": "tx_1",
+                        "account_id": "acc_1",
+                        "amount": -100,
+                        "created": "2024-01-01T10:00:00Z",
+                    }
+                ]
+            },
             {"transactions": []},
         ]
 
@@ -96,9 +128,13 @@ class TestFetchTransactions:
         txs = fetch_transactions(mock_client, "acc_123", "2024-01-01T00:00:00Z")
 
         assert len(txs) == 2
-        # Second call should use last tx ID as since
+        # Results sorted oldest first
+        assert txs[0].id == "tx_1"
+        assert txs[1].id == "tx_2"
+        # Second call should use 'before' with oldest tx timestamp, and keep 'since' for filtering
         calls = mock_client.get.call_args_list
-        assert calls[1][1]["params"]["since"] == "tx_1"
+        assert "before" in calls[1][1]["params"]
+        assert calls[1][1]["params"]["since"] == "2024-01-01T00:00:00Z"
 
     def test_raises_sca_expired_on_403(self, mocker: MockerFixture) -> None:
         """Should raise SCAExpiredError on 403 (90-day limit)."""
