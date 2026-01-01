@@ -14,6 +14,7 @@ uv sync
    - Approve the login on the mobile app
    - Go to Clients, and create a new OAuth client
    - Set **Redirect URL** to: `http://localhost:8080/callback`
+   - Set **Confidentiality** to confidential (so reauthentication is easy)
 2. Create `.env.secrets` in project root:
 
 ```env
