@@ -1,10 +1,12 @@
 """Tests for MonzoDatabase class."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from monzo_api.src.database import MonzoDatabase
+from monzo_api.src.models import Account, Merchant, MonzoExport, Pot, Transaction
 
 
 @pytest.fixture
@@ -116,3 +118,118 @@ class TestMonzoDatabase:
             assert result[0][2] == 8000  # eod_balance day 1
             assert result[1][1] == -3000  # daily_net day 2
             assert result[1][2] == 5000  # eod_balance day 2
+
+    def test_import_accounts(self, temp_db: Path) -> None:
+        """Should import Account models."""
+        db = MonzoDatabase(temp_db)
+        db.setup()
+
+        accounts = [
+            Account(id="acc_1", type="uk_retail", closed=False),
+            Account(id="acc_2", type="uk_retail_joint", closed=True),
+        ]
+        count = db.import_accounts(accounts)
+
+        assert count == 2
+        with db as conn:
+            rows = conn.execute("SELECT id, type, closed FROM accounts ORDER BY id").fetchall()
+            assert rows[0] == ("acc_1", "uk_retail", False)
+            assert rows[1] == ("acc_2", "uk_retail_joint", True)
+
+    def test_import_merchants(self, temp_db: Path) -> None:
+        """Should import Merchant models."""
+        db = MonzoDatabase(temp_db)
+        db.setup()
+
+        merchants = {
+            "merch_1": Merchant(
+                id="merch_1", name="Coffee Shop", category="eating_out", emoji="☕"
+            ),
+            "merch_2": Merchant(id="merch_2", name="Supermarket", category="groceries"),
+        }
+        count = db.import_merchants(merchants)
+
+        assert count == 2
+        with db as conn:
+            rows = conn.execute("SELECT id, name, category FROM merchants ORDER BY id").fetchall()
+            assert rows[0] == ("merch_1", "Coffee Shop", "eating_out")
+            assert rows[1] == ("merch_2", "Supermarket", "groceries")
+
+    def test_import_transactions(self, temp_db: Path) -> None:
+        """Should import Transaction models."""
+        db = MonzoDatabase(temp_db)
+        db.setup()
+
+        # Need account first due to FK
+        with db as conn:
+            conn.execute("INSERT INTO accounts (id, type) VALUES ('acc_1', 'uk_retail')")
+
+        transactions = [
+            Transaction(
+                id="tx_1",
+                account_id="acc_1",
+                amount=-500,
+                created=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+                category="eating_out",
+            ),
+        ]
+        count = db.import_transactions(transactions)
+
+        assert count == 1
+        with db as conn:
+            row = conn.execute("SELECT id, amount, category FROM transactions").fetchone()
+            assert row == ("tx_1", -500, "eating_out")
+
+    def test_import_pots(self, temp_db: Path) -> None:
+        """Should import Pot models."""
+        db = MonzoDatabase(temp_db)
+        db.setup()
+
+        # Need account first due to FK
+        with db as conn:
+            conn.execute("INSERT INTO accounts (id, type) VALUES ('acc_1', 'uk_retail')")
+
+        pots = [
+            Pot(id="pot_1", name="Savings", balance=10000, current_account_id="acc_1"),
+        ]
+        count = db.import_pots(pots)
+
+        assert count == 1
+        with db as conn:
+            row = conn.execute("SELECT id, name, balance FROM pots").fetchone()
+            assert row == ("pot_1", "Savings", 10000)
+
+    def test_import_data_full_export(self, temp_db: Path, capsys: pytest.CaptureFixture) -> None:
+        """Should import a complete MonzoExport."""
+        db = MonzoDatabase(temp_db)
+
+        export = MonzoExport(
+            exported_at=datetime.now(UTC),
+            accounts=[Account(id="acc_1", type="uk_retail")],
+            pots=[Pot(id="pot_1", name="Savings", balance=5000, current_account_id="acc_1")],
+            transactions={
+                "acc_1": [
+                    Transaction(
+                        id="tx_1",
+                        account_id="acc_1",
+                        amount=-100,
+                        created=datetime(2024, 1, 1, tzinfo=UTC),
+                        merchant=Merchant(id="merch_1", name="Shop"),
+                    ),
+                ]
+            },
+        )
+
+        counts = db.import_data(export)
+
+        assert counts["accounts"] == 1
+        assert counts["merchants"] == 1
+        assert counts["transactions"] == 1
+        assert counts["pots"] == 1
+
+        # Verify data in DB
+        stats = db.stats()
+        assert stats["accounts"] == 1
+        assert stats["merchants"] == 1
+        assert stats["transactions"] == 1
+        assert stats["pots"] == 1
