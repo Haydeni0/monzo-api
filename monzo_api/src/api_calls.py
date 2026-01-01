@@ -205,10 +205,28 @@ def export(days: int | None = None) -> MonzoExport:
         transactions[acc.id] = txs
         print(f"    {len(txs)} transactions")
 
-    client.close()
-
     total = sum(len(t) for t in transactions.values())
     print(f"\nTotal: {total} transactions")
+
+    # Verify balances when fetching full history
+    if days is None:
+        print("\nBalance verification:")
+        all_ok = True
+        for acc in active:
+            api_balance = fetch_balance(client, acc.id).balance_pounds
+            tx_sum = sum(t.amount for t in transactions[acc.id] if not t.decline_reason) / 100
+            diff = api_balance - tx_sum
+            if abs(diff) < 0.01:
+                print(f"  {acc.type}: OK")
+            else:
+                print(
+                    f"  {acc.type}: MISMATCH (API={api_balance:.2f}, txs={tx_sum:.2f}, diff={diff:+.2f})"
+                )
+                all_ok = False
+        if not all_ok:
+            print("\n  Warning: Balance mismatch may indicate missing transactions")
+
+    client.close()
 
     return MonzoExport(
         exported_at=datetime.now(UTC),
