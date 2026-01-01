@@ -5,10 +5,11 @@ import json
 import typer
 
 from monzo_api.src.api_calls import export as export_data
+from monzo_api.src.api_calls import fetch_accounts, fetch_balance
 from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
 from monzo_api.src.database import MonzoDatabase
 from monzo_api.src.get_token import token_oauth
-from monzo_api.src.utils import load_token_data
+from monzo_api.src.utils import create_client, load_token, load_token_data
 
 app = typer.Typer(help="Monzo API tools for exporting and analyzing your data.")
 
@@ -46,6 +47,32 @@ def export(
     database = MonzoDatabase()
     database.import_data(results)
     database.print_stats()
+
+    # Verify balances against database
+    client = create_client(load_token())
+    accounts = fetch_accounts(client)
+    api_balances = {
+        acc.id: fetch_balance(client, acc.id).balance_pounds for acc in accounts if not acc.closed
+    }
+    client.close()
+
+    db_balances = database.account_balances
+    typer.echo("Balance verification:")
+    all_ok = True
+    for acc in accounts:
+        if acc.closed:
+            continue
+        api_bal = api_balances.get(acc.id, 0.0)
+        db_bal = db_balances.get(acc.id, 0.0)
+        diff = api_bal - db_bal
+        if abs(diff) >= 0.01:
+            typer.echo(
+                f"  {acc.type}: MISMATCH (API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f})"
+            )
+            all_ok = False
+
+    if not all_ok:
+        typer.echo("\n  Warning: Balance mismatch may indicate missing transactions")
 
 
 @app.command()
