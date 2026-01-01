@@ -110,6 +110,32 @@ class Account(BaseModel):
     model_config = {"extra": "ignore"}
 
 
+class Balance(BaseModel):
+    """Account balance information from /balance endpoint."""
+
+    balance: int  # Main account balance in minor units (pence)
+    total_balance: int  # Balance including pots
+    spend_today: int  # Spent today in minor units
+    currency: str = "GBP"
+
+    model_config = {"extra": "ignore"}
+
+    @property
+    def balance_pounds(self) -> float:
+        """Main balance in pounds."""
+        return self.balance / 100
+
+    @property
+    def total_balance_pounds(self) -> float:
+        """Total balance (with pots) in pounds."""
+        return self.total_balance / 100
+
+    @property
+    def pots_balance_pounds(self) -> float:
+        """Balance in pots in pounds."""
+        return (self.total_balance - self.balance) / 100
+
+
 class Pot(BaseModel):
     """A savings pot."""
 
