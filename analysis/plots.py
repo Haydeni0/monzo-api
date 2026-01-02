@@ -10,6 +10,17 @@ from plotly.subplots import make_subplots
 from monzo_api.src.database import MonzoDatabase
 
 
+def _pretty_account_name(account_type: str) -> str:
+    """Convert account type to display name."""
+    return (
+        account_type.replace("uk_retail_joint", "Joint")
+        .replace("uk_retail", "Current")
+        .replace("uk_monzo_flex", "Flex")
+        .replace("_", " ")
+        .title()
+    )
+
+
 def balance_overview(db: MonzoDatabase) -> go.Figure:
     """Create balance overview figure with account balances over time and current pots.
 
@@ -123,8 +134,7 @@ def balance_overview(db: MonzoDatabase) -> go.Figure:
         ]
 
         # Pretty name for legend
-        display_name = acc_type.replace("uk_retail_joint", "Joint").replace("uk_retail", "Current")
-        display_name = display_name.replace("uk_monzo_flex", "Flex").replace("_", " ").title()
+        display_name = _pretty_account_name(acc_type)
 
         fig.add_trace(
             go.Scatter(
@@ -264,21 +274,17 @@ def transaction_waterfall(
         )
     )
 
-    # Account name for title
-    account_names = {
-        "uk_retail": "Current Account",
-        "uk_retail_joint": "Joint Account",
-        "uk_monzo_flex": "Monzo Flex",
-    }
-    title = account_names.get(account_type, account_type)
-
     fig.update_layout(
         template="plotly_white",
         height=500,
         width=1200,
         hovermode="x",
         margin={"t": 80, "l": 80, "r": 40, "b": 80},
-        title={"text": f"{title} - Balance Waterfall", "x": 0.5, "font": {"size": 18}},
+        title={
+            "text": f"{_pretty_account_name(account_type)} - Balance Waterfall",
+            "x": 0.5,
+            "font": {"size": 18},
+        },
         yaxis_title="Daily Net Change (£)",
         xaxis_tickangle=-45,
     )
@@ -391,21 +397,17 @@ def spending_waterfall(
         )
     )
 
-    # Account name for title
-    account_names = {
-        "uk_retail": "Current Account",
-        "uk_retail_joint": "Joint Account",
-        "uk_monzo_flex": "Monzo Flex",
-    }
-    title = account_names.get(account_type, account_type)
-
     fig.update_layout(
         template="plotly_white",
         height=500,
         width=1200,
         hovermode="x",
         margin={"t": 80, "l": 80, "r": 40, "b": 80},
-        title={"text": f"{title} - Cumulative Spending", "x": 0.5, "font": {"size": 18}},
+        title={
+            "text": f"{_pretty_account_name(account_type)} - Cumulative Spending",
+            "x": 0.5,
+            "font": {"size": 18},
+        },
         yaxis_title="Daily Spending (£)",
         xaxis_tickangle=-45,
     )
