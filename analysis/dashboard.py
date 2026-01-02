@@ -1,22 +1,42 @@
 """Monzo Dashboard - Interactive visualization of your Monzo data."""
 
+import logging
+from pathlib import Path
+
 from dash import Dash, dcc, html, callback, Input, Output
 
 from monzo_api.src.database import MonzoDatabase
 from plots import balance_overview, spending_waterfall, transaction_waterfall
 
-# Initialize database
-db = MonzoDatabase()
+# Setup logging (reset log file each run)
+LOG_FILE = Path(__file__).parent / "dashboard.log"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode="w"),  # 'w' overwrites on each start
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
 
-# Get available account types
-account_types = db.account_types
-
-# Get all categories from database
-with db as conn:
+# Get initial data (these don't change during runtime)
+_init_db = MonzoDatabase()
+account_types = _init_db.account_types
+with _init_db as conn:
     categories = [
         row[0]
-        for row in conn.sql("SELECT DISTINCT category FROM transactions ORDER BY category").fetchall()
+        for row in conn.sql(
+            "SELECT DISTINCT category FROM transactions ORDER BY category"
+        ).fetchall()
     ]
+del _init_db  # Close init connection
+
+
+def get_db() -> MonzoDatabase:
+    """Get a fresh database connection for each callback."""
+    return MonzoDatabase()
+
 
 # Default exclusions
 DEFAULT_EXCLUDE = ["savings", "transfers"]
@@ -31,7 +51,7 @@ app.layout = html.Div(
         html.Div(
             [
                 html.H2("Balance Overview"),
-                dcc.Graph(id="balance-overview", figure=balance_overview(db)),
+                dcc.Graph(id="balance-overview", figure=balance_overview(get_db())),
             ]
         ),
         html.Hr(),
@@ -69,16 +89,30 @@ app.layout = html.Div(
                 html.H2("Spending Waterfall"),
                 html.Div(
                     [
-                        html.Label("Exclude categories:"),
+                        html.Label("Exclude categories:", style={"marginBottom": "5px"}),
+                        html.Div(
+                            [
+                                html.Button(
+                                    "Exclude All",
+                                    id="exclude-all-btn",
+                                    style={"marginRight": "5px"},
+                                ),
+                                html.Button(
+                                    "Reset",
+                                    id="reset-exclude-btn",
+                                ),
+                            ],
+                            style={"marginBottom": "10px"},
+                        ),
                         dcc.Dropdown(
                             id="exclude-categories",
                             options=[{"label": c, "value": c} for c in categories],
                             value=DEFAULT_EXCLUDE,
                             multi=True,
-                            style={"width": "500px"},
+                            style={"width": "100%"},
                         ),
                     ],
-                    style={"marginBottom": "15px"},
+                    style={"marginBottom": "15px", "maxWidth": "800px"},
                 ),
                 dcc.Graph(id="spending-waterfall"),
             ]
@@ -89,17 +123,39 @@ app.layout = html.Div(
 
 
 @callback(
+    Output("exclude-categories", "value"),
+    Input("exclude-all-btn", "n_clicks"),
+    Input("reset-exclude-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def update_exclude_dropdown(exclude_all_clicks: int | None, reset_clicks: int | None):
+    """Update exclude dropdown based on button clicks."""
+    from dash import ctx
+
+    logger.debug(f"Exclude dropdown: triggered_id={ctx.triggered_id}")
+    if ctx.triggered_id == "exclude-all-btn":
+        return categories
+    elif ctx.triggered_id == "reset-exclude-btn":
+        return DEFAULT_EXCLUDE
+    return DEFAULT_EXCLUDE
+
+
+@callback(
     Output("transaction-waterfall", "figure"),
     Input("account-dropdown", "value"),
     Input("days-input", "value"),
 )
 def update_transaction_waterfall(account_type: str | None, days: int | str | None):
     """Update transaction waterfall based on account selection."""
-    if not account_type:
-        return {}
-    # Handle empty string from input
-    days_int = int(days) if days else None
-    return transaction_waterfall(db, account_type=account_type, days=days_int)
+    logger.debug(f"Transaction waterfall: account={account_type}, days={days}")
+    try:
+        if not account_type:
+            return {}
+        days_int = int(days) if days else None
+        return transaction_waterfall(get_db(), account_type=account_type, days=days_int)
+    except Exception as e:
+        logger.exception(f"Error in transaction_waterfall: {e}")
+        raise
 
 
 @callback(
@@ -112,20 +168,24 @@ def update_spending_waterfall(
     account_type: str | None, days: int | str | None, exclude: list[str] | None
 ):
     """Update spending waterfall based on account selection."""
-    if not account_type:
-        return {}
-    # Handle empty string from input
-    days_int = int(days) if days else None
-    exclude_list = exclude if exclude else []
-    return spending_waterfall(
-        db, account_type=account_type, days=days_int, exclude_categories=exclude_list
-    )
+    logger.debug(f"Spending waterfall: account={account_type}, days={days}, exclude={exclude}")
+    try:
+        if not account_type:
+            return {}
+        days_int = int(days) if days else None
+        exclude_list = exclude if exclude else []
+        return spending_waterfall(
+            get_db(), account_type=account_type, days=days_int, exclude_categories=exclude_list
+        )
+    except Exception as e:
+        logger.exception(f"Error in spending_waterfall: {e}")
+        raise
 
 
 if __name__ == "__main__":
     import os
 
     port = int(os.environ.get("DASH_PORT", 8050))
-    print(f"Starting Monzo Dashboard at http://127.0.0.1:{port}")
+    logger.info(f"Starting Monzo Dashboard at http://127.0.0.1:{port}")
+    logger.info(f"Log file: {LOG_FILE}")
     app.run(debug=True, port=port)
-
