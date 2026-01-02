@@ -62,7 +62,9 @@ app.layout = html.Div(
                 dcc.Dropdown(
                     id="account-dropdown",
                     options=[{"label": t, "value": t} for t in account_types],
-                    value=account_types[0] if account_types else None,
+                    value="uk_retail"
+                    if "uk_retail" in account_types
+                    else (account_types[0] if account_types else None),
                     style={"width": "300px"},
                 ),
                 html.Label("Days of history:", style={"marginLeft": "20px"}),
