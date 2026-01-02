@@ -288,3 +288,130 @@ def transaction_waterfall(
     )
 
     return fig
+
+
+def spending_waterfall(
+    db: MonzoDatabase,
+    account_type: str = "uk_retail",
+    days: int | None = 30,
+    exclude_categories: list[str] | None = None,
+) -> go.Figure:
+    """Create cumulative spending waterfall.
+
+    Args:
+        db: MonzoDatabase instance.
+        account_type: Account type from the `accounts` table.
+        days: Number of days to show. None = all history.
+        exclude_categories: Categories to exclude. Default: ['savings', 'transfers'].
+
+    Returns:
+        Plotly Waterfall Figure showing cumulative spending over time.
+
+    Raises:
+        ValueError: If account_type is not valid.
+    """
+    if exclude_categories is None:
+        exclude_categories = ["savings", "transfers"]
+
+    valid_types = db.account_types
+    if account_type not in valid_types:
+        raise ValueError(f"Invalid account_type '{account_type}'. Valid: {valid_types}")
+
+    date_filter = f"AND t.created >= CURRENT_DATE - INTERVAL '{days} days'" if days else ""
+    category_filter = (
+        f"AND t.category NOT IN ({', '.join(repr(c) for c in exclude_categories)})"
+        if exclude_categories
+        else ""
+    )
+
+    with db as conn:
+        # Get daily spending
+        df = conn.sql(f"""
+            SELECT 
+                t.created::DATE as date,
+                SUM(t.amount) / -100.0 as spending,
+                STRING_AGG(
+                    COALESCE(m.name, t.description, 'Unknown') || ': £' || 
+                    PRINTF('%.2f', t.amount / -100.0),
+                    '<br>'
+                    ORDER BY t.amount ASC
+                ) as transactions
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.id
+            LEFT JOIN merchants m ON t.merchant_id = m.id
+            WHERE a.type = '{account_type}'
+              AND t.decline_reason IS NULL
+              AND t.amount < 0
+              {category_filter}
+              {date_filter}
+            GROUP BY t.created::DATE
+            ORDER BY t.created::DATE
+        """).pl()  # noqa: S608
+
+    if df.is_empty():
+        fig = go.Figure()
+        fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+
+    # Build waterfall data
+    dates = df["date"].to_list()
+    values = df["spending"].to_list()
+    transactions = df["transactions"].to_list()
+    measures = ["relative"] * len(values)
+
+    # Format dates
+    if len(dates) > 60:
+        x_labels = [d.strftime("%Y-%m-%d") for d in dates]
+    else:
+        x_labels = [d.strftime("%d %b") for d in dates]
+
+    # Disable connectors for large datasets
+    connector_config = (
+        {"visible": False} if len(values) > 60 else {"line": {"color": "#ccc", "width": 1}}
+    )
+
+    # Build hover text
+    hover_texts = []
+    cumulative = 0.0
+    for date, val, txns in zip(x_labels, values, transactions):
+        cumulative += val
+        txn_lines = txns.split("<br>") if txns else []
+        if len(txn_lines) > 8:
+            txns = "<br>".join(txn_lines[:8]) + f"<br>... +{len(txn_lines) - 8} more"
+        hover_texts.append(
+            f"<b>{date}</b><br>Day: £{val:,.2f}<br>Total: £{cumulative:,.2f}<br><br>{txns}"
+        )
+
+    fig = go.Figure(
+        go.Waterfall(
+            x=x_labels,
+            y=values,
+            measure=measures,
+            increasing={"marker": {"color": "#EF5350"}},  # Red for spending
+            decreasing={"marker": {"color": "#EF5350"}},  # All spending is "increasing" cumulative
+            connector=connector_config,
+            hovertext=hover_texts,
+            hoverinfo="text",
+        )
+    )
+
+    # Account name for title
+    account_names = {
+        "uk_retail": "Current Account",
+        "uk_retail_joint": "Joint Account",
+        "uk_monzo_flex": "Monzo Flex",
+    }
+    title = account_names.get(account_type, account_type)
+
+    fig.update_layout(
+        template="plotly_white",
+        height=500,
+        width=1200,
+        hovermode="x",
+        margin={"t": 80, "l": 80, "r": 40, "b": 80},
+        title={"text": f"{title} - Cumulative Spending", "x": 0.5, "font": {"size": 18}},
+        yaxis_title="Daily Spending (£)",
+        xaxis_tickangle=-45,
+    )
+
+    return fig
