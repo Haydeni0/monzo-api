@@ -103,39 +103,52 @@ def export(
     _verify_balances(accounts, api_balances, db_balances)
 
 
-@app.command()
-def db(
-    reset: bool = typer.Option(False, "--reset", help="Drop and recreate all tables"),
-    stats: bool = typer.Option(False, "--stats", "-s", help="Show database statistics"),
-    accounts: bool = typer.Option(False, "--accounts", "-a", help="Show accounts table"),
-) -> None:
-    """Manage the DuckDB database."""
-    database = MonzoDatabase()
+# Database sub-commands
+db_app = typer.Typer(help="Database management commands.")
+app.add_typer(db_app, name="db")
 
-    if reset:
-        confirm = typer.confirm("This will DELETE all data. Continue?")
-        if confirm:
-            database.reset()
-        else:
-            console.print("[dim]Aborted.[/dim]")
-            raise typer.Exit(1)
-    elif accounts:
-        with database as conn:
-            rows = conn.sql("SELECT id, type, closed FROM accounts ORDER BY type").fetchall()
-        table = Table(title="Accounts", show_header=True, header_style="bold")
-        table.add_column("ID")
-        table.add_column("Type")
-        table.add_column("Closed")
-        for row in rows:
-            closed = "[red]Yes[/red]" if row[2] else "[green]No[/green]"
-            table.add_row(row[0], row[1], closed)
-        console.print(table)
-    elif stats:
-        database.print_stats()
-    else:
-        console.print("[dim]Ensuring database schema...[/dim]")
-        database.setup()
-        database.print_stats()
+
+@db_app.command()
+def setup() -> None:
+    """Ensure database schema exists."""
+    database = MonzoDatabase()
+    console.print("[dim]Ensuring database schema...[/dim]")
+    database.setup()
+    database.print_stats()
+
+
+@db_app.command()
+def reset() -> None:
+    """Drop and recreate all tables."""
+    confirm = typer.confirm("This will DELETE all data. Continue?")
+    if not confirm:
+        console.print("[dim]Aborted.[/dim]")
+        raise typer.Exit(1)
+    database = MonzoDatabase()
+    database.reset()
+
+
+@db_app.command()
+def stats() -> None:
+    """Show database statistics."""
+    database = MonzoDatabase()
+    database.print_stats()
+
+
+@db_app.command()
+def accounts() -> None:
+    """Show accounts table."""
+    database = MonzoDatabase()
+    with database as conn:
+        rows = conn.sql("SELECT id, type, closed FROM accounts ORDER BY type").fetchall()
+    table = Table(title="Accounts", show_header=True, header_style="bold")
+    table.add_column("ID")
+    table.add_column("Type")
+    table.add_column("Closed")
+    for row in rows:
+        closed = "[red]Yes[/red]" if row[2] else "[green]No[/green]"
+        table.add_row(row[0], row[1], closed)
+    console.print(table)
 
 
 @app.command()
