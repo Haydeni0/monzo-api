@@ -203,19 +203,20 @@ def transaction_waterfall(
     date_filter = f"AND t.created >= CURRENT_DATE - INTERVAL '{days} days'" if days else ""
 
     with db as conn:
-        # Get daily net change with transaction details
+        # Get daily net change with transaction details (resolve pot IDs to names)
         df = conn.sql(f"""
             SELECT 
                 t.created::DATE as date,
                 SUM(t.amount) / 100.0 as net_change,
                 STRING_AGG(
-                    COALESCE(t.description, 'Unknown') || ': £' || 
+                    COALESCE(p.name, t.description, 'Unknown') || ': £' || 
                     PRINTF('%.2f', t.amount / 100.0),
                     '<br>'
                     ORDER BY t.amount DESC
                 ) as transactions
             FROM transactions t
             JOIN accounts a ON t.account_id = a.id
+            LEFT JOIN pots p ON t.description = p.id
             WHERE a.type = '{account_type}'
               AND t.decline_reason IS NULL
               {date_filter}

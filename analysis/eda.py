@@ -15,8 +15,17 @@ fig.show()
 fig_waterfall = transaction_waterfall(db, account_type="uk_retail", days=None)
 fig_waterfall.show()
 
-# %% Export to HTML
+# %% Transaction waterfall - Joint account
+fig_waterfall_joint = transaction_waterfall(db, account_type="uk_retail_joint", days=None)
+fig_waterfall_joint.show()
+
+# %% Export to HTML and PNG
 fig.write_html("analysis/balance_overview.html", include_plotlyjs=True)
-print("Exported to analysis/balance_overview.html")
+fig.write_image("analysis/balance_overview.png", scale=2)
+fig_waterfall.write_html("analysis/waterfall_current.html", include_plotlyjs=True)
+fig_waterfall.write_image("analysis/waterfall_current.png", scale=2)
+fig_waterfall_joint.write_html("analysis/waterfall_joint.html", include_plotlyjs=True)
+fig_waterfall_joint.write_image("analysis/waterfall_joint.png", scale=2)
+print("Exported to analysis/")
 
 # %%

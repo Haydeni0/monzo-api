@@ -15,7 +15,3 @@ wheels/
 .monzo_data.json*
 .monzo.duckdb
 .env.secrets
-
-# Generated analysis outputs
-analysis/*.html
-analysis/*.csv
