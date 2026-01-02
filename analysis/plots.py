@@ -411,3 +411,100 @@ def spending_waterfall(
     )
 
     return fig
+
+
+def pot_history(db: MonzoDatabase, include_deleted: bool = True) -> go.Figure:
+    """Create historical pot balances chart.
+
+    Calculates pot balances over time by working backwards from current balance
+    using pot transfer transactions. Colors and dash styles distinguish accounts.
+
+    Args:
+        db: MonzoDatabase instance.
+        include_deleted: Whether to include deleted pots.
+
+    Returns:
+        Plotly Figure with pot balance history.
+    """
+    # Dash styles cycle for different account types
+    dash_styles = ["solid", "dash", "dot", "dashdot", "longdash"]
+
+    with db as conn:
+        # Get pots with account type, sorted by account then balance
+        deleted_filter = "" if include_deleted else "WHERE p.deleted = false"
+        pots = conn.sql(f"""
+            SELECT p.id, p.name, p.balance / 100.0 as current_balance, a.type as account_type
+            FROM pots p
+            JOIN accounts a ON p.account_id = a.id
+            {deleted_filter}
+            ORDER BY a.type, p.balance DESC
+        """).pl()  # noqa: S608
+
+        # Get pot transactions
+        pot_txns = conn.sql("""
+            SELECT 
+                t.created::DATE as date,
+                t.description as pot_id,
+                t.amount / 100.0 as amount
+            FROM transactions t
+            JOIN pots p ON t.description = p.id
+            WHERE t.category IN ('savings', 'transfers')
+              AND t.decline_reason IS NULL
+            ORDER BY t.created
+        """).pl()
+
+    if pots.is_empty() or pot_txns.is_empty():
+        fig = go.Figure()
+        fig.add_annotation(text="No pot data", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+
+    # Build dynamic account -> dash style mapping
+    unique_accounts = pots["account_type"].unique().to_list()
+    account_dash = {acc: dash_styles[i % len(dash_styles)] for i, acc in enumerate(unique_accounts)}
+
+    fig = go.Figure()
+
+    for row in pots.iter_rows(named=True):
+        pot_id = row["id"]
+        pot_name = row["name"]
+        current_balance = row["current_balance"]
+        account_type = row["account_type"]
+
+        txns = pot_txns.filter(pl.col("pot_id") == pot_id).sort("date")
+        if txns.is_empty():
+            continue
+
+        # Calculate running balance
+        total_change = -txns["amount"].sum()
+        starting_balance = current_balance - total_change
+        balances = starting_balance + (-txns["amount"]).cum_sum()
+
+        pot_df = pl.DataFrame({"date": txns["date"], "balance": balances})
+        pot_df = pot_df.upsample("date", every="1d").select(pl.all().forward_fill())
+
+        # Get dash style for this account (color auto-assigned by Plotly)
+        dash = account_dash.get(account_type, "solid")
+
+        fig.add_trace(
+            go.Scatter(
+                x=pot_df["date"],
+                y=pot_df["balance"],
+                name=pot_name,
+                mode="lines",
+                line={"dash": dash},
+                hovertemplate=f"{pot_name}<br>%{{x}}<br>£%{{y:,.2f}}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title={"text": "Historical Pot Balances", "x": 0.5, "font": {"size": 18}},
+        xaxis_title="Date",
+        yaxis_title="Balance (£)",
+        height=600,
+        hovermode="x unified",
+        legend={"orientation": "h", "yanchor": "top", "y": -0.1, "xanchor": "center", "x": 0.5},
+        margin={"t": 80, "l": 60, "r": 40, "b": 120},
+    )
+
+    return fig
