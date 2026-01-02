@@ -18,36 +18,38 @@ def balance_overview(db: MonzoDatabase) -> go.Figure:
 
     Returns:
         Plotly Figure with two subplots:
-        - Left: Balance over time for Current and Joint accounts
+        - Left: Balance over time for all accounts
         - Right: Current pot balances as horizontal bar chart
     """
+    # Color palette for accounts
+    account_colors = ["#00A4DB", "#E54D42", "#7CB342", "#AB47BC", "#FF7043"]
+
     with db as conn:
-        # Pivot accounts to columns
+        # Get all account types dynamically
+        account_types = [
+            row[0]
+            for row in conn.sql(
+                "SELECT DISTINCT type FROM accounts WHERE closed = false ORDER BY type"
+            ).fetchall()
+        ]
+
+        # Get daily balances for all accounts
         df = conn.sql("""
-            PIVOT (
-                SELECT 
-                    d.date,
-                    CASE a.type 
-                        WHEN 'uk_retail' THEN 'Current'
-                        WHEN 'uk_retail_joint' THEN 'Joint'
-                    END as account,
-                    d.eod_balance / 100.0 as balance
-                FROM daily_balances d
-                JOIN accounts a ON d.account_id = a.id
-                WHERE a.type IN ('uk_retail', 'uk_retail_joint')
-            )
-            ON account USING SUM(balance)
-            ORDER BY date
+            SELECT 
+                d.date,
+                a.type as account,
+                d.eod_balance / 100.0 as balance
+            FROM daily_balances d
+            JOIN accounts a ON d.account_id = a.id
+            WHERE a.closed = false
+            ORDER BY date, a.type
         """).pl()
 
-        # Get daily transaction summaries for hover info (with pot names resolved)
+        # Get daily transaction summaries for hover info
         tx_summary = conn.sql("""
             SELECT 
                 t.created::DATE as date,
-                CASE a.type 
-                    WHEN 'uk_retail' THEN 'Current'
-                    WHEN 'uk_retail_joint' THEN 'Joint'
-                END as account,
+                a.type as account,
                 COUNT(*) as tx_count,
                 SUM(t.amount) / 100.0 as net_change,
                 FIRST(
@@ -57,7 +59,7 @@ def balance_overview(db: MonzoDatabase) -> go.Figure:
             FROM transactions t
             JOIN accounts a ON t.account_id = a.id
             LEFT JOIN pots p ON t.description = p.id
-            WHERE a.type IN ('uk_retail', 'uk_retail_joint')
+            WHERE a.closed = false
               AND t.decline_reason IS NULL
             GROUP BY t.created::DATE, a.type
         """).pl()
@@ -67,30 +69,23 @@ def balance_overview(db: MonzoDatabase) -> go.Figure:
             SELECT 
                 p.name, 
                 p.balance / 100.0 as balance,
-                CASE a.type 
-                    WHEN 'uk_retail' THEN 'Current'
-                    WHEN 'uk_retail_joint' THEN 'Joint'
-                END as account
+                a.type as account
             FROM pots p
             JOIN accounts a ON p.account_id = a.id
-            WHERE p.deleted = false
+            WHERE p.deleted = false AND a.closed = false
             ORDER BY a.type, p.balance DESC
         """).pl()
 
+    if df.is_empty():
+        fig = go.Figure()
+        fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+
+    # Pivot to wide format
+    df = df.pivot(on="account", index="date", values="balance")
+
     # Fill gaps: upsample to daily and forward-fill balances
     df = df.upsample("date", every="1d").select(pl.all().forward_fill())
-
-    # Join transaction summaries for hover
-    tx_current = tx_summary.filter(pl.col("account") == "Current").select(
-        "date", "tx_count", "net_change", "biggest_tx"
-    )
-    tx_joint = tx_summary.filter(pl.col("account") == "Joint").select(
-        "date",
-        pl.col("tx_count").alias("tx_count_joint"),
-        pl.col("net_change").alias("net_change_joint"),
-        pl.col("biggest_tx").alias("biggest_tx_joint"),
-    )
-    df = df.join(tx_current, on="date", how="left").join(tx_joint, on="date", how="left")
 
     # Create figure
     fig = make_subplots(
@@ -101,68 +96,69 @@ def balance_overview(db: MonzoDatabase) -> go.Figure:
         subplot_titles=["Balance Over Time", "Current Pots"],
     )
 
-    # Build hover text for Current account
-    current_hover = [
-        f"£{bal:,.2f}<br>{int(cnt) if cnt else 0} txns ({net:+,.2f})<br>{tx[:30] if tx else ''}"
-        for bal, cnt, net, tx in zip(
-            df["Current"].fill_null(0),
-            df["tx_count"].fill_null(0),
-            df["net_change"].fill_null(0),
-            df["biggest_tx"].fill_null(""),
+    # Add trace for each account
+    for i, acc_type in enumerate(account_types):
+        if acc_type not in df.columns:
+            continue
+
+        color = account_colors[i % len(account_colors)]
+
+        # Get transaction summary for this account
+        tx_acc = tx_summary.filter(pl.col("account") == acc_type)
+        df_with_tx = df.join(
+            tx_acc.select("date", "tx_count", "net_change", "biggest_tx"),
+            on="date",
+            how="left",
         )
-    ]
 
-    fig.add_trace(
-        go.Scatter(
-            x=df["date"],
-            y=df["Current"],
-            name="Current",
-            fill="tozeroy",
-            line={"color": "#00A4DB"},
-            hovertemplate="%{customdata}<extra>Current</extra>",
-            customdata=current_hover,
-        ),
-        row=1,
-        col=1,
-    )
-
-    if "Joint" in df.columns:
-        joint_hover = [
+        # Build hover text
+        hover_text = [
             f"£{bal:,.2f}<br>{int(cnt) if cnt else 0} txns ({net:+,.2f})<br>{tx[:30] if tx else ''}"
             for bal, cnt, net, tx in zip(
-                df["Joint"].fill_null(0),
-                df["tx_count_joint"].fill_null(0),
-                df["net_change_joint"].fill_null(0),
-                df["biggest_tx_joint"].fill_null(""),
+                df_with_tx[acc_type].fill_null(0),
+                df_with_tx["tx_count"].fill_null(0),
+                df_with_tx["net_change"].fill_null(0),
+                df_with_tx["biggest_tx"].fill_null(""),
             )
         ]
+
+        # Pretty name for legend
+        display_name = acc_type.replace("uk_retail_joint", "Joint").replace("uk_retail", "Current")
+        display_name = display_name.replace("uk_monzo_flex", "Flex").replace("_", " ").title()
+
         fig.add_trace(
             go.Scatter(
                 x=df["date"],
-                y=df["Joint"],
-                name="Joint",
+                y=df[acc_type],
+                name=display_name,
                 fill="tozeroy",
-                line={"color": "#E54D42"},
-                hovertemplate="%{customdata}<extra>Joint</extra>",
-                customdata=joint_hover,
+                line={"color": color},
+                hovertemplate=f"%{{customdata}}<extra>{display_name}</extra>",
+                customdata=hover_text,
             ),
             row=1,
             col=1,
         )
 
     # Pots bar chart - color by account
-    pot_colors = ["#00A4DB" if acc == "Current" else "#E54D42" for acc in pots["account"]]
-    fig.add_trace(
-        go.Bar(
-            y=pots["name"],
-            x=pots["balance"],
-            orientation="h",
-            marker_color=pot_colors,
-            showlegend=False,
-        ),
-        row=1,
-        col=2,
-    )
+    if not pots.is_empty():
+        pot_colors_list = [
+            account_colors[account_types.index(acc) % len(account_colors)]
+            if acc in account_types
+            else "#888"
+            for acc in pots["account"]
+        ]
+        fig.add_trace(
+            go.Bar(
+                y=pots["name"],
+                x=pots["balance"],
+                orientation="h",
+                marker_color=pot_colors_list,
+                showlegend=False,
+            ),
+            row=1,
+            col=2,
+        )
 
     fig.update_layout(
         template="plotly_white",
