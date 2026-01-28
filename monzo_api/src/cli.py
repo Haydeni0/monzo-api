@@ -26,6 +26,22 @@ def auth(
     token_oauth()
 
 
+def _verify_balances(api_balances: dict[str, float], db_balances: dict[str, float]) -> bool:
+    typer.echo("Balance verification:")
+    all_ok = True
+    for acc_id, api_bal in api_balances.items():
+        db_bal = db_balances.get(acc_id, 0.0)
+        diff = api_bal - db_bal
+        if abs(diff) >= 0.01:
+            typer.echo(
+                f"  {acc_id}: MISMATCH (API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f})"
+            )
+            all_ok = False
+
+    if not all_ok:
+        typer.echo("\n  Warning: Balance mismatch may indicate missing transactions")
+
+
 @app.command()
 def export(
     days: int | None = typer.Option(None, "--days", "-d", help="Days of history (omit for full)"),
@@ -35,6 +51,8 @@ def export(
 
     Fetches full history by default using backward pagination.
     Use --days to limit to recent transactions only.
+
+    Verifies balances against database after export, and shows a warning if there are any mismatches.
     """
     results = export_data(days)
     results.save(CACHE_FILE)
@@ -57,22 +75,8 @@ def export(
     client.close()
 
     db_balances = database.account_balances
-    typer.echo("Balance verification:")
-    all_ok = True
-    for acc in accounts:
-        if acc.closed:
-            continue
-        api_bal = api_balances.get(acc.id, 0.0)
-        db_bal = db_balances.get(acc.id, 0.0)
-        diff = api_bal - db_bal
-        if abs(diff) >= 0.01:
-            typer.echo(
-                f"  {acc.type}: MISMATCH (API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f})"
-            )
-            all_ok = False
 
-    if not all_ok:
-        typer.echo("\n  Warning: Balance mismatch may indicate missing transactions")
+    _verify_balances(api_balances, db_balances)
 
 
 @app.command()
