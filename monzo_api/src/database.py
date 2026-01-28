@@ -411,7 +411,7 @@ class MonzoDatabase:
             progress.update(task, advance=1, description="[cyan]Pots done")
 
         # Show import summary
-        table = Table(title="Import Complete", show_header=True, header_style="bold")
+        table = Table(title="Database Import Complete", show_header=True, header_style="bold")
         table.add_column("Table")
         table.add_column("Rows", justify="right")
         for tbl, count in counts.items():

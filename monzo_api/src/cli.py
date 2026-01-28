@@ -31,24 +31,36 @@ def _verify_balances(
     accounts: list, api_balances: dict[str, float], db_balances: dict[str, float]
 ) -> bool:
     """Verify API balances match database. Returns True if all OK."""
-    acc_names = {acc.id: acc.type for acc in accounts}
+    # Build balance table
+    table = Table(title="Account Balances", show_header=True, header_style="bold")
+    table.add_column("Account")
+    table.add_column("Balance", justify="right")
+    table.add_column("Status", justify="center")
+
     all_ok = True
-    for acc_id, api_bal in api_balances.items():
-        db_bal = db_balances.get(acc_id, 0.0)
+    for acc in accounts:
+        if acc.closed or acc.id not in api_balances:
+            continue
+        api_bal = api_balances[acc.id]
+        db_bal = db_balances.get(acc.id, 0.0)
         diff = api_bal - db_bal
-        if abs(diff) >= 0.01:
-            name = acc_names.get(acc_id, acc_id[:20])
-            console.print(
-                f"[red]MISMATCH[/red] {name}: API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f}"
-            )
+        ok = abs(diff) < 0.01
+
+        if ok:
+            status = "[green]OK[/green]"
+        else:
+            status = f"[red]diff {diff:+.2f}[/red]"
             all_ok = False
 
-    if all_ok:
-        console.print("[green]Balance verification OK[/green]")
-    else:
+        table.add_row(acc.type, f"£{api_bal:,.2f}", status)
+
+    console.print()
+    console.print(table)
+
+    if not all_ok:
         console.print(
-            "\n[yellow]Warning: Balance mismatch may indicate missing transactions."
-            " Full export may be required (`monzo export`)[/yellow]"
+            "\n[yellow]Warning: Balances do not match between the API and the database."
+            " Full export may be required (run `monzo export` again)[/yellow]"
         )
     return all_ok
 
