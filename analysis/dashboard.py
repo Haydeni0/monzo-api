@@ -198,4 +198,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("DASH_PORT", 8050))
     logger.info(f"Starting Monzo Dashboard at http://127.0.0.1:{port}")
     logger.info(f"Log file: {LOG_FILE}")
-    app.run(debug=True, port=port)
+    app.run(debug=False, port=port)
