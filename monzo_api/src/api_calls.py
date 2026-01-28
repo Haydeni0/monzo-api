@@ -92,11 +92,12 @@ def fetch_transactions(
         chunk_start = account_created
 
     all_txs: list[Transaction] = []
+    seen_ids: set[str] = set()
     chunk_size = timedelta(days=CHUNK_SIZE_DAYS)
 
     while chunk_start < now:
         chunk_end = min(chunk_start + chunk_size, now + timedelta(days=1))
-        since_cursor = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        since_cursor: str = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
         before_bound = chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         while True:
@@ -121,25 +122,29 @@ def fetch_transactions(
             if not txs_raw:
                 break
 
+            # Dedupe as we go (handles same-timestamp transactions)
             txs = [Transaction.model_validate(t) for t in txs_raw]
-            all_txs.extend(txs)
+            new_txs = [t for t in txs if t.id not in seen_ids]
+            if not new_txs:
+                break  # All duplicates, done with this chunk
+
+            for t in new_txs:
+                seen_ids.add(t.id)
+            all_txs.extend(new_txs)
 
             if len(all_txs) % 1000 < 100:
                 print(f"    {len(all_txs)}...")
 
-            newest = max(txs, key=lambda t: t.created)
-            since_cursor = newest.id
+            # Use timestamp MINUS 1 second as cursor to ensure we catch all same-timestamp txs
+            # This causes some duplicates, but seen_ids filters them out
+            newest = max(new_txs, key=lambda t: t.created)
+            cursor_time = newest.created - timedelta(seconds=1)
+            since_cursor = cursor_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
         chunk_start = chunk_end
 
-    # Dedupe (in case of overlaps at chunk boundaries)
-    seen_ids: set[str] = set()
-    deduped: list[Transaction] = []
-    for tx in sorted(all_txs, key=lambda t: t.created):
-        if tx.id not in seen_ids:
-            seen_ids.add(tx.id)
-            deduped.append(tx)
-    return deduped
+    all_txs.sort(key=lambda t: t.created)
+    return all_txs
 
 
 def export(days: int | None = None) -> MonzoExport:
