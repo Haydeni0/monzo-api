@@ -12,8 +12,9 @@ dependencies = [
     "matplotlib>=3.10.8",
     "nbformat>=5.10.4",
     "numpy>=2.4.0",
+    "pandas>=2.3.3",
     "plotly>=6.5.0",
-    "polars>=1.36.1",
+    "polars[pyarrow]>=1.36.1",
     "pydantic>=2.12.5",
     "pytest>=9.0.2",
     "pytest-mock>=3.15.1",
@@ -62,6 +63,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S603", "D", "E", "W", "PLR0913", "N803", "N806"]
 "*.ipynb" = ["ALL"]
+"analysis/*" = ["ALL"]  # Notebook-style scripts
 "**/__init__.py" = [
     "F401", # Unused imports (imports in __init__.py are often for re-exporting)
     "F403", # Wildcard imports `from module import *` (common in __init__.py)
@@ -88,3 +90,7 @@ package = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["monzo_api"]
+
+[tool.setuptools.packages.find]
+include = ["monzo_api*"]
+exclude = ["analysis*", "tests*", "notebooks*"]

@@ -1,10 +1,10 @@
-"""Tests for export_data module using mock API."""
+"""Tests for api_calls module using mock API."""
 
 import httpx
 import pytest
 from pytest_mock import MockerFixture
 
-from monzo_api.src.export_data import (
+from monzo_api.src.api_calls import (
     SCAExpiredError,
     fetch_accounts,
     fetch_pots,

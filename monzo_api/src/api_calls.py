@@ -1,11 +1,7 @@
-"""Export Monzo data to JSON.
+"""Monzo API calling functions.
 
+Functions for fetching data from the Monzo API.
 Uses backward pagination with `before` param to get full transaction history.
-No 365-day limit when using `before` instead of `since` alone.
-
-Usage:
-    monzo export           # full history
-    monzo export -d 30     # last 30 days only
 """
 
 from datetime import UTC, datetime, timedelta
@@ -13,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 
 from monzo_api.src.config import CACHE_FILE
-from monzo_api.src.models import Account, MonzoExport, Pot, Transaction
+from monzo_api.src.models import Account, Balance, MonzoExport, Pot, Transaction
 from monzo_api.src.utils import create_client, load_token
 
 
@@ -46,6 +42,13 @@ def fetch_pots(client: httpx.Client, account_id: str) -> list[Pot]:
     resp = client.get("/pots", params={"current_account_id": account_id})
     resp.raise_for_status()
     return [Pot.model_validate(p) for p in resp.json()["pots"]]
+
+
+def fetch_balance(client: httpx.Client, account_id: str) -> Balance:
+    """Fetch current balance for an account."""
+    resp = client.get("/balance", params={"account_id": account_id})
+    resp.raise_for_status()
+    return Balance.model_validate(resp.json())
 
 
 def fetch_transactions(
