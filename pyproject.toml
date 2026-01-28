@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.27",
     "ipykernel>=7.1.0",
     "ipywidgets>=8.1.8",
+    "kaleido>=1.2.0",
     "matplotlib>=3.10.8",
     "nbformat>=5.10.4",
     "numpy>=2.4.0",
