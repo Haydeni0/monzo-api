@@ -2,6 +2,33 @@
 
 Python tools for exporting and analyzing your own Monzo data, by pulling it from the [Monzo API](https://docs.monzo.com/#introduction).
 
+See setup [below](#setup).
+
+## Dashboard
+
+Launch the interactive dashboard:
+
+```bash
+monzo dashboard
+```
+
+Opens at `http://127.0.0.1:8050` with:
+- **Balance Overview** - all accounts and pots over time
+- **Daily Balance Waterfall** - daily balance changes per account
+- **Spending Waterfall** - cumulative spending (configurable category exclusions)
+- **Pot History** - pot balances over time
+
+### Images
+
+> Example dashboard plots from randomly generated data
+
+![alt text](media/balance_overview.png)
+![alt text](media/daily_balance_waterfall.png)
+![alt text](media/spending_waterfall.png)
+![alt text](media/pot_history.png)
+
+
+
 ## Setup
 
 ```bash
@@ -97,30 +124,6 @@ with db as conn:
         LIMIT 10
     """).pl()
 ```
-
-## Dashboard
-
-Launch the interactive dashboard:
-
-```bash
-monzo dashboard
-```
-
-Opens at `http://127.0.0.1:8050` with:
-- **Balance Overview** - all accounts and pots over time
-- **Daily Balance Waterfall** - daily balance changes per account
-- **Spending Waterfall** - cumulative spending (configurable category exclusions)
-- **Pot History** - pot balances over time
-
-### Images
-
-> Example dashboard plots from randomly generated data
-
-![alt text](media/balance_overview.png)
-![alt text](media/daily_balance_waterfall.png)
-![alt text](media/spending_waterfall.png)
-![alt text](media/pot_history.png)
-
 
 ## Documentation
 
