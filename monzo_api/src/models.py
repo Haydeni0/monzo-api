@@ -137,8 +137,8 @@ class MonzoExport(BaseModel):
     """Complete export of Monzo data."""
 
     exported_at: datetime
-    since: str  # ISO date string
-    days: int
+    since: str | None = None  # ISO date string, None = full history
+    days: int | None = None  # None = full history
     accounts: list[Account]
     pots: list[Pot]
     transactions: dict[str, list[Transaction]]  # Keyed by account_id

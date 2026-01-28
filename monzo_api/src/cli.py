@@ -28,11 +28,12 @@ def auth(
 
 @app.command()
 def export(
-    days: int = typer.Option(89, "--days", "-d", help="Number of days of history to fetch"),
+    days: int | None = typer.Option(None, "--days", "-d", help="Days of history (omit for full)"),
 ) -> None:
     """Export Monzo data to JSON.
 
-    Default 90 days. Use more days after fresh auth (within 5 min window).
+    Fetches full history by default using backward pagination.
+    Use --days to limit to recent transactions only.
     """
     export_main(days)
 
