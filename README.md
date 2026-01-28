@@ -1,6 +1,6 @@
 # Monzo API
 
-Python tools for exporting and analyzing your own Monzo data, by pulling it from the [Monzo API](https://docs.monzo.com/#introduction).
+Python tools for exporting and analysing your own Monzo data, by pulling it from the [Monzo API](https://docs.monzo.com/#introduction).
 
 See setup [below](#setup).
 
