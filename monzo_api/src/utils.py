@@ -21,7 +21,9 @@ def load_env_secrets() -> None:
             line = raw_line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
+                # Remove comments and whitespace/quotes
+                value = value.split("#")[0].strip().strip("'").strip('"')
+                os.environ.setdefault(key.strip(), value)
 
 
 def load_token_data() -> dict | None:
