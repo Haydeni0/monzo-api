@@ -64,6 +64,8 @@ monzo db setup        # ensure database schema exists
 monzo db stats        # show database row counts
 monzo db accounts     # show accounts table
 monzo db reset        # drop and recreate tables
+monzo dashboard       # launch interactive Dash dashboard
+monzo dashboard -p 8080   # custom port
 ```
 
 ## Data Storage
@@ -93,11 +95,18 @@ with db as conn:
     """).pl()
 ```
 
-## Analysis
+## Dashboard
 
-Run `analysis/eda.py` (IPython notebook-style) to generate:
-- `analysis/balance_overview.html` - interactive Plotly chart
-- `analysis/daily_balances.csv` - daily balance data
+Launch the interactive dashboard:
+
+```bash
+monzo dashboard
+```
+
+Opens at `http://127.0.0.1:8050` with:
+- **Balance Overview** - all accounts and pots over time
+- **Transaction Waterfall** - daily balance changes per account
+- **Spending Waterfall** - cumulative spending (configurable category exclusions)
 
 ## Documentation
 

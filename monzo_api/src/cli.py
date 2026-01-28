@@ -1,13 +1,16 @@
 """Monzo API CLI."""
 
 import json
+import os
+import subprocess
+import sys
 
 import typer
 from rich.table import Table
 
 from monzo_api.src.api_calls import export as export_data
 from monzo_api.src.api_calls import fetch_accounts, fetch_balance
-from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
+from monzo_api.src.config import CACHE_FILE, DB_FILE, PROJECT_ROOT, TOKEN_FILE
 from monzo_api.src.database import MonzoDatabase
 from monzo_api.src.get_token import token_oauth
 from monzo_api.src.utils import console, load_token_data, monzo_client
@@ -191,6 +194,25 @@ def status() -> None:
         console.print(table)
     else:
         console.print("\n  [red]Database:[/red] Not found")
+
+
+@app.command()
+def dashboard(
+    port: int = typer.Option(8050, "--port", "-p", help="Port to run dashboard on"),
+) -> None:
+    """Launch interactive Dash dashboard."""
+    dashboard_path = PROJECT_ROOT / "analysis" / "dashboard.py"
+    if not dashboard_path.exists():
+        console.print(f"[red]Dashboard not found at {dashboard_path}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Starting dashboard at http://127.0.0.1:{port}[/cyan]")
+    subprocess.run(  # noqa: S603
+        [sys.executable, str(dashboard_path)],
+        cwd=PROJECT_ROOT / "analysis",
+        env={**os.environ, "DASH_PORT": str(port)},
+        check=False,
+    )
 
 
 if __name__ == "__main__":
