@@ -108,8 +108,19 @@ monzo dashboard
 
 Opens at `http://127.0.0.1:8050` with:
 - **Balance Overview** - all accounts and pots over time
-- **Transaction Waterfall** - daily balance changes per account
+- **Daily Balance Waterfall** - daily balance changes per account
 - **Spending Waterfall** - cumulative spending (configurable category exclusions)
+- **Pot History** - pot balances over time
+
+### Images
+
+> Example dashboard plots from randomly generated data
+
+![alt text](media/balance_overview.png)
+![alt text](media/daily_balance_waterfall.png)
+![alt text](media/spending_waterfall.png)
+![alt text](media/pot_history.png)
+
 
 ## Documentation
 
