@@ -9,7 +9,7 @@ from monzo_api.src.api_calls import fetch_accounts, fetch_balance
 from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
 from monzo_api.src.database import MonzoDatabase
 from monzo_api.src.get_token import token_oauth
-from monzo_api.src.utils import create_client, load_token, load_token_data
+from monzo_api.src.utils import load_token, load_token_data, monzo_client
 
 app = typer.Typer(help="Monzo API tools for exporting and analyzing your data.")
 
@@ -67,12 +67,13 @@ def export(
     database.print_stats()
 
     # Verify balances against database
-    client = create_client(load_token())
-    accounts = fetch_accounts(client)
-    api_balances = {
-        acc.id: fetch_balance(client, acc.id).balance_pounds for acc in accounts if not acc.closed
-    }
-    client.close()
+    with monzo_client() as client:
+        accounts = fetch_accounts(client)
+        api_balances = {
+            acc.id: fetch_balance(client, acc.id).balance_pounds
+            for acc in accounts
+            if not acc.closed
+        }
 
     db_balances = database.account_balances
 

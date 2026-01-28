@@ -2,6 +2,8 @@
 
 import json
 import os
+from contextlib import contextmanager
+from typing import Generator
 
 import httpx
 
@@ -43,7 +45,8 @@ def save_token(token_data: dict) -> None:
     TOKEN_FILE.write_text(json.dumps(token_data, indent=2))
 
 
-def create_client(token: str | None = None) -> httpx.Client:
+@contextmanager
+def monzo_client(token: str | None = None) -> Generator[httpx.Client, None, None]:
     """Create authenticated HTTP client.
 
     Args:
@@ -51,8 +54,12 @@ def create_client(token: str | None = None) -> httpx.Client:
     """
     if token is None:
         token = load_token()
-    return httpx.Client(
+    client = httpx.Client(
         base_url=API_URL,
         headers={"Authorization": f"Bearer {token}"},
         timeout=30.0,
     )
+    try:
+        yield client
+    finally:
+        client.close()
