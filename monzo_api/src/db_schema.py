@@ -207,8 +207,6 @@ CREATE INDEX IF NOT EXISTS idx_pots_account ON pots(account_id);
 class MonzoDatabase:
     """Interface for Monzo DuckDB database. Also a context manager for connections."""
 
-    TABLES = ["accounts", "merchants", "transactions", "pots"]
-
     def __init__(self, db_path: str | Path = DB_FILE, read_only: bool = False) -> None:
         """Initialize database with given path."""
         self.db_path = Path(db_path)
@@ -245,9 +243,11 @@ class MonzoDatabase:
 
     def stats(self) -> dict[str, int]:
         """Get row counts for all tables and views."""
+        tables = ["accounts", "merchants", "transactions", "pots"]
+
         with MonzoDatabase(self.db_path, read_only=True) as conn:
             result = {}
-            for table in [*self.TABLES, "daily_balances"]:
+            for table in [*tables, "daily_balances"]:
                 row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
                 result[table] = row[0] if row else 0
             return result
