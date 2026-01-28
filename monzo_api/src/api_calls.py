@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 
 from monzo_api.src.models import Account, Balance, MonzoExport, Pot, Transaction
-from monzo_api.src.utils import monzo_client
+from monzo_api.src.utils import console, monzo_client
 
 CHUNK_SIZE_DAYS = 364  # Monzo API limit is 365 days
 
@@ -29,6 +29,7 @@ class SCAExpiredError(Exception):
                 "SCA expired - can only access last 89 days.\n"
                 "After 5 minutes of auth, Monzo limits transaction history to 89 days.\n"
                 "Run 'monzo auth --force' to reauthenticate for full history.\n"
+                "or run 'monzo export --days 89' to get the last 89 days.\n"
                 "Docs: https://docs.monzo.com/#list-transactions"
             )
         )
@@ -141,7 +142,9 @@ def fetch_transactions(
     if days is not None:
         start = max(now - timedelta(days=days), account_created)
         if days > (now - account_created).days:
-            print(f"    Note: Account is only {(now - account_created).days} days old")
+            console.print(
+                f"    [dim]Note: Account is only {(now - account_created).days} days old[/dim]"
+            )
     else:
         start = account_created
 
@@ -157,7 +160,7 @@ def fetch_transactions(
         all_txs.extend(txs)
 
         if len(all_txs) % 1000 < 100 and all_txs:
-            print(f"    {len(all_txs)}...")
+            console.print(f"    [dim]{len(all_txs)}...[/dim]")
 
         if sca_expired:
             if not all_txs:
@@ -177,33 +180,33 @@ def export(days: int | None = None) -> MonzoExport:
         days: Number of days to fetch. None = full history.
     """
     if days:
-        print(f"Fetching last {days} days\n")
+        console.print(f"[bold]Fetching last {days} days[/bold]\n")
     else:
-        print("Fetching full transaction history\n")
+        console.print("[bold]Fetching full transaction history[/bold]\n")
 
     with monzo_client() as client:
         # Accounts
         accounts = fetch_accounts(client)
         active = [a for a in accounts if not a.closed]
-        print(f"Accounts: {len(accounts)} ({len(active)} active)")
+        console.print(f"Accounts: {len(accounts)} ({len(active)} active)")
 
         # Pots
         pots: list[Pot] = []
         for acc in active:
             pots.extend(fetch_pots(client, acc.id))
-        print(f"Pots: {len(pots)}")
+        console.print(f"Pots: {len(pots)}")
 
         # Transactions
         transactions: dict[str, list[Transaction]] = {}
-        print("\nTransactions:")
+        console.print("\n[bold]Transactions:[/bold]")
         for acc in active:
-            print(f"  {acc.type}:")
+            console.print(f"  {acc.type}:")
             txs = fetch_transactions(client, acc, days)
             transactions[acc.id] = txs
-            print(f"    {len(txs)} transactions")
+            console.print(f"    [green]{len(txs)}[/green] transactions")
 
         total = sum(len(t) for t in transactions.values())
-        print(f"\nTotal: {total} transactions")
+        console.print(f"\n[bold]Total:[/bold] {total} transactions")
 
     return MonzoExport(
         exported_at=datetime.now(UTC),

@@ -76,9 +76,12 @@ Expanded Merchant (via ?expand[]=merchant)
 from pathlib import Path
 
 import duckdb
+from rich.progress import Progress
+from rich.table import Table
 
 from monzo_api.src.config import DB_FILE
 from monzo_api.src.models import Account, Merchant, MonzoExport, Pot, Transaction
+from monzo_api.src.utils import console
 
 SCHEMA = """
 -- ============================================
@@ -229,7 +232,7 @@ class MonzoDatabase:
         """Create all tables, views, and indexes."""
         with self as conn:
             conn.execute(SCHEMA)
-        print(f"Database setup complete: {self.db_path}")
+        console.print(f"[green]Database setup complete:[/green] {self.db_path}")
 
     def reset(self) -> None:
         """Drop all tables and recreate."""
@@ -240,7 +243,7 @@ class MonzoDatabase:
             conn.execute("DROP TABLE IF EXISTS merchants")
             conn.execute("DROP TABLE IF EXISTS accounts")
             conn.execute(SCHEMA)
-        print(f"Database reset complete: {self.db_path}")
+        console.print(f"[yellow]Database reset complete:[/yellow] {self.db_path}")
 
     def stats(self) -> dict[str, int]:
         """Get row counts for all tables and views."""
@@ -255,11 +258,13 @@ class MonzoDatabase:
 
     def print_stats(self) -> None:
         """Print database statistics."""
-        print("\nDatabase Statistics")
-        print("=" * 30)
-        for table, count in self.stats().items():
-            print(f"  {table:20} {count:>6} rows")
-        print()
+        table = Table(title="Database Statistics", show_header=True, header_style="bold")
+        table.add_column("Table")
+        table.add_column("Rows", justify="right")
+        for tbl, count in self.stats().items():
+            table.add_row(tbl, f"{count:,}")
+        console.print()
+        console.print(table)
 
     # ==========================================
     # IMPORT METHODS
@@ -390,22 +395,28 @@ class MonzoDatabase:
 
         counts = {}
 
-        # Import in dependency order
-        print("Importing accounts...")
-        counts["accounts"] = self.import_accounts(data.accounts)
+        with Progress(console=console) as progress:
+            task = progress.add_task("[cyan]Importing...", total=4)
 
-        print("Importing merchants...")
-        counts["merchants"] = self.import_merchants(data.all_merchants)
+            counts["accounts"] = self.import_accounts(data.accounts)
+            progress.update(task, advance=1, description="[cyan]Accounts done")
 
-        print("Importing transactions...")
-        counts["transactions"] = self.import_transactions(data.all_transactions)
+            counts["merchants"] = self.import_merchants(data.all_merchants)
+            progress.update(task, advance=1, description="[cyan]Merchants done")
 
-        print("Importing pots...")
-        counts["pots"] = self.import_pots(data.pots)
+            counts["transactions"] = self.import_transactions(data.all_transactions)
+            progress.update(task, advance=1, description="[cyan]Transactions done")
 
-        print("\nImport complete:")
-        for table, count in counts.items():
-            print(f"  {table}: {count}")
+            counts["pots"] = self.import_pots(data.pots)
+            progress.update(task, advance=1, description="[cyan]Pots done")
+
+        # Show import summary
+        table = Table(title="Import Complete", show_header=True, header_style="bold")
+        table.add_column("Table")
+        table.add_column("Rows", justify="right")
+        for tbl, count in counts.items():
+            table.add_row(tbl, f"{count:,}")
+        console.print(table)
 
         return counts
 
