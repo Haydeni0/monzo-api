@@ -83,6 +83,7 @@ def get_auth_code() -> str:
     auth_url = f"{AUTH_URL}/?{auth_params}"
 
     print("Opening browser for Monzo authentication...")
+    print(f"If the browser does not open, visit this URL:\n  {auth_url}\n")
     webbrowser.open(auth_url)
 
     # Start local server to receive callback
