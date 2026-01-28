@@ -56,90 +56,114 @@ def fetch_balance(client: httpx.Client, account_id: str) -> Balance:
     return Balance.model_validate(resp.json())
 
 
+def _to_timestamp(dt: datetime) -> str:
+    """Convert datetime to Monzo API timestamp format."""
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _fetch_chunk(
+    client: httpx.Client,
+    account_id: str,
+    since: datetime,
+    before: datetime,
+    seen_ids: set[str],
+) -> tuple[list[Transaction], bool]:
+    """Fetch all transactions in a time chunk with pagination.
+
+    Returns:
+        Tuple of (transactions, sca_expired). If sca_expired is True,
+        the caller should stop fetching and return what we have.
+    """
+    txs: list[Transaction] = []
+    cursor = _to_timestamp(since)
+    before_str = _to_timestamp(before)
+
+    while True:
+        resp = client.get(
+            "/transactions",
+            params={
+                "account_id": account_id,
+                "limit": 100,
+                "expand[]": "merchant",
+                "since": cursor,
+                "before": before_str,
+            },
+        )
+
+        if resp.status_code == 403:
+            return txs, True  # SCA expired
+        if resp.status_code == 400:
+            break  # Invalid range, skip chunk
+        resp.raise_for_status()
+
+        raw = resp.json().get("transactions", [])
+        if not raw:
+            break
+
+        page = [Transaction.model_validate(t) for t in raw]
+        new = [t for t in page if t.id not in seen_ids]
+        if not new:
+            break  # All duplicates
+
+        for t in new:
+            seen_ids.add(t.id)
+        txs.extend(new)
+
+        # Back up cursor by 1s to catch same-timestamp transactions
+        newest = max(new, key=lambda t: t.created)
+        cursor = _to_timestamp(newest.created - timedelta(seconds=1))
+
+    return txs, False
+
+
 def fetch_transactions(
     client: httpx.Client,
     account: Account,
     days: int | None = None,
 ) -> list[Transaction]:
-    """Fetch transactions using yearly chunking with forward pagination.
+    """Fetch transactions using yearly chunking.
 
-    Monzo API errors:
-    (1) If you request a time range >= 365 days, you get a 400 error.
-    (2) If you request a time range >= 90 days, AND you have not authenticated
-        in the last 5 minutes, you get a 403 error.
-
-    This implementation breaks the full history into 1-year chunks to avoid (1).
+    Monzo API limits:
+    - 400 error if time range >= 365 days
+    - 403 error if range >= 90 days and SCA expired (>5 min since auth)
 
     Args:
         client: HTTP client with auth.
         account: Account to fetch transactions for.
-        days: Number of days to fetch. None = full history from account creation.
+        days: Number of days to fetch. None = full history.
 
     Returns:
         List of transactions sorted by created date.
     """
-    account_created = account.created or datetime.now(UTC) - timedelta(days=CHUNK_SIZE_DAYS)
+    now = datetime.now(UTC)
+    account_created = account.created or now - timedelta(days=CHUNK_SIZE_DAYS)
 
     # Calculate start date
-    now = datetime.now(UTC)
     if days is not None:
-        requested_start = now - timedelta(days=days)
-        chunk_start = max(requested_start, account_created)
-        account_age_days = (now - account_created).days
-        if days > account_age_days:
-            print(f"    Note: Account is only {account_age_days} days old")
+        start = max(now - timedelta(days=days), account_created)
+        if days > (now - account_created).days:
+            print(f"    Note: Account is only {(now - account_created).days} days old")
     else:
-        chunk_start = account_created
+        start = account_created
 
+    # Fetch in yearly chunks
     all_txs: list[Transaction] = []
     seen_ids: set[str] = set()
-    chunk_size = timedelta(days=CHUNK_SIZE_DAYS)
+    chunk_start = start
 
     while chunk_start < now:
-        chunk_end = min(chunk_start + chunk_size, now + timedelta(days=1))
-        since_cursor: str = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
-        before_bound = chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+        chunk_end = min(chunk_start + timedelta(days=CHUNK_SIZE_DAYS), now + timedelta(days=1))
 
-        while True:
-            params = {
-                "account_id": account.id,
-                "limit": 100,
-                "expand[]": "merchant",
-                "since": since_cursor,
-                "before": before_bound,
-            }
+        txs, sca_expired = _fetch_chunk(client, account.id, chunk_start, chunk_end, seen_ids)
+        all_txs.extend(txs)
 
-            resp = client.get("/transactions", params=params)
-            if resp.status_code == 403:
-                if not all_txs:
-                    raise SCAExpiredError
-                return sorted(all_txs, key=lambda t: t.created)
-            if resp.status_code == 400:
-                break
-            resp.raise_for_status()
+        if len(all_txs) % 1000 < 100 and all_txs:
+            print(f"    {len(all_txs)}...")
 
-            txs_raw = resp.json().get("transactions", [])
-            if not txs_raw:
-                break
-
-            # Dedupe as we go (handles same-timestamp transactions)
-            txs = [Transaction.model_validate(t) for t in txs_raw]
-            new_txs = [t for t in txs if t.id not in seen_ids]
-            if not new_txs:
-                break  # All duplicates, done with this chunk
-
-            for t in new_txs:
-                seen_ids.add(t.id)
-            all_txs.extend(new_txs)
-
-            if len(all_txs) % 1000 < 100:
-                print(f"    {len(all_txs)}...")
-
-            # Use timestamp MINUS 1 second as cursor to ensure we catch all same-timestamp txs
-            # This causes some duplicates, but seen_ids filters them out
-            newest = max(new_txs, key=lambda t: t.created)
-            cursor_time = newest.created - timedelta(seconds=1)
-            since_cursor = cursor_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        if sca_expired:
+            if not all_txs:
+                raise SCAExpiredError
+            break
 
         chunk_start = chunk_end
 
