@@ -285,7 +285,7 @@ def transaction_waterfall(
             "x": 0.5,
             "font": {"size": 18},
         },
-        yaxis_title="Daily Net Change (£)",
+        yaxis_title="Daily Balance (£)",
         xaxis_tickangle=-45,
     )
 
@@ -408,7 +408,7 @@ def spending_waterfall(
             "x": 0.5,
             "font": {"size": 18},
         },
-        yaxis_title="Daily Spending (£)",
+        yaxis_title="Cumulative outgoing payments (£)",
         xaxis_tickangle=-45,
     )
 

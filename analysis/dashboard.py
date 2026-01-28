@@ -1,6 +1,7 @@
 """Monzo Dashboard - Interactive visualization of your Monzo data."""
 
 import logging
+import os
 from pathlib import Path
 
 from dash import Dash, dcc, html, callback, Input, Output
@@ -35,6 +36,9 @@ del _init_db  # Close init connection
 
 def get_db() -> MonzoDatabase:
     """Get a fresh database connection for each callback."""
+    db_path = os.environ.get("MONZO_DB_PATH")
+    if db_path:
+        return MonzoDatabase(db_path)
     return MonzoDatabase()
 
 
@@ -77,10 +81,10 @@ app.layout = html.Div(
             ],
             style={"display": "flex", "alignItems": "center", "marginBottom": "20px"},
         ),
-        # Transaction Waterfall
+        # Daily Balance Waterfall
         html.Div(
             [
-                html.H2("Transaction Waterfall"),
+                html.H2("Daily Balance Waterfall"),
                 dcc.Graph(id="transaction-waterfall"),
             ]
         ),
