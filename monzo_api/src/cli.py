@@ -27,7 +27,7 @@ def auth(
 
 @app.command()
 def export(
-    days: int = typer.Option(90, "--days", "-d", help="Number of days of history to fetch"),
+    days: int = typer.Option(89, "--days", "-d", help="Number of days of history to fetch"),
 ) -> None:
     """Export Monzo data to JSON.
 
