@@ -1,6 +1,6 @@
 # Monzo API
 
-Python tools for exporting and analyzing your Monzo data.
+Python tools for exporting and analyzing your own Monzo data, by pulling it from the Monzo API.
 
 ## Setup
 
@@ -8,14 +8,14 @@ Python tools for exporting and analyzing your Monzo data.
 uv sync
 ```
 
-## Configuration
+## Authentication
 
 1. Create a client at [`https://developers.monzo.com`](https://developers.monzo.com)
    - Approve the login on the mobile app
    - Go to Clients, and create a new OAuth client
    - Set **Redirect URL** to: `http://localhost:8080/callback`
-   - Set **Confidentiality** to confidential (so reauthentication is easy)
-2. Create `.env.secrets` in project root:
+   - Set **Confidentiality** to confidential
+2. Create `./.env.secrets` in project root with your client ID and secret:
 
 ```env
 MONZO_CLIENT_ID=oauth2client_xxx
@@ -32,7 +32,7 @@ monzo export          # export full history + import to DuckDB (run within 5 min
 ```
 
 > **Note:** Monzo limits transaction history to 90 days after 5 minutes of authentication.
-> Use `--force` to get a fresh SCA window, then run `export` immediately.
+> Use `--force` to get a fresh 5-minute SCA window, then run `export` immediately.
 
 ### Quick Export / Update
 
@@ -80,8 +80,8 @@ from monzo_api.src.database import MonzoDatabase
 
 db = MonzoDatabase()
 with db as conn:
-    # Top merchants by spend
-    rows = conn.execute("""
+    # Top merchants by spend (returns Polars DataFrame)
+    df = conn.sql("""
         SELECT m.emoji, m.name, COUNT(*) as txns, SUM(t.amount)/-100.0 as spent
         FROM transactions t
         JOIN merchants m ON t.merchant_id = m.id
@@ -89,7 +89,7 @@ with db as conn:
         GROUP BY m.id, m.name, m.emoji
         ORDER BY spent DESC
         LIMIT 10
-    """).fetchall()
+    """).pl()
 ```
 
 ## Analysis

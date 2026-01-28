@@ -408,3 +408,19 @@ class MonzoDatabase:
             print(f"  {table}: {count}")
 
         return counts
+
+    @property
+    def account_balances(self) -> dict[str, float]:
+        """Get current balance per account from database.
+
+        Returns dict of account_id -> balance in pounds (from daily_balances view).
+        """
+        with self as conn:
+            rows = conn.execute("""
+                SELECT account_id, eod_balance / 100.0 as balance
+                FROM daily_balances
+                WHERE (account_id, date) IN (
+                    SELECT account_id, MAX(date) FROM daily_balances GROUP BY account_id
+                )
+            """).fetchall()
+        return {row[0]: row[1] for row in rows}
