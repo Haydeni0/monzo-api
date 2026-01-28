@@ -17,7 +17,11 @@ dependencies = [
     "pytest>=9.0.2",
     "pytest-mock>=3.15.1",
     "ruff>=0.14.10",
+    "typer>=0.21.0",
 ]
+
+[project.scripts]
+monzo = "monzo_api.src.cli:app"
 
 [tool.ruff]
 line-length = 100
@@ -77,3 +81,9 @@ convention = "google"
 [tool.ruff.format]
 # Use `\n` line endings for all files
 line-ending = "lf"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["monzo_api"]

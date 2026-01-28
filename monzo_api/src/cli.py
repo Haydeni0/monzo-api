@@ -1,0 +1,114 @@
+"""Monzo API CLI."""
+
+import json
+
+import typer
+
+from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
+from monzo_api.src.db_schema import MonzoDatabase
+from monzo_api.src.export_data import main as export_main
+from monzo_api.src.get_token import main as get_token_main
+from monzo_api.src.utils import load_token_data
+
+app = typer.Typer(help="Monzo API tools for exporting and analyzing your data.")
+
+
+@app.command()
+def auth(
+    force: bool = typer.Option(False, "--force", "-f", help="Force new authentication"),
+) -> None:
+    """Authenticate with Monzo and get an access token."""
+    if force and TOKEN_FILE.exists():
+        TOKEN_FILE.unlink()
+        typer.echo("Removed existing token.")
+
+    get_token_main()
+
+
+@app.command()
+def export(
+    full: bool = typer.Option(
+        False, "--full", "-f", help="Force fresh auth for full history (>90 days)"
+    ),
+) -> None:
+    """Export all Monzo data to JSON cache.
+
+    Run within 5 minutes of fresh authentication to get full transaction history.
+    After 5 mins, API limits to last 90 days only.
+    """
+    if full:
+        if TOKEN_FILE.exists():
+            TOKEN_FILE.unlink()
+            typer.echo("Removed existing token for fresh auth.\n")
+
+        get_token_main()
+        typer.echo("\n" + "=" * 50)
+        typer.echo("Now run export within 5 minutes!")
+        typer.echo("=" * 50 + "\n")
+
+    export_main()
+
+
+@app.command()
+def db(
+    reset: bool = typer.Option(False, "--reset", help="Drop and recreate all tables"),
+    stats: bool = typer.Option(False, "--stats", "-s", help="Show database statistics"),
+) -> None:
+    """Manage the DuckDB database."""
+    database = MonzoDatabase()
+
+    if reset:
+        confirm = typer.confirm("This will DELETE all data. Continue?")
+        if confirm:
+            database.reset()
+        else:
+            typer.echo("Aborted.")
+            raise typer.Exit(1)
+    elif stats:
+        database.print_stats()
+    else:
+        database.setup()
+        database.print_stats()
+
+
+@app.command()
+def status() -> None:
+    """Show current authentication and cache status."""
+    typer.echo("Monzo API Status\n")
+
+    # Token status
+    token_data = load_token_data()
+    if token_data:
+        typer.echo(f"  Token: Found ({TOKEN_FILE.name})")
+        if "access_token" in token_data:
+            typer.echo(f"         {token_data['access_token'][:30]}...")
+    else:
+        typer.echo("  Token: Not found")
+
+    # Cache status
+    if CACHE_FILE.exists():
+        cache = json.loads(CACHE_FILE.read_text())
+        tx_count = sum(len(txs) for txs in cache.get("transactions", {}).values())
+        typer.echo(f"\n  Cache: {CACHE_FILE.name}")
+        typer.echo(f"         Accounts: {len(cache.get('accounts', []))}")
+        typer.echo(f"         Transactions: {tx_count}")
+        typer.echo(f"         Merchants: {len(cache.get('merchants', {}))}")
+        typer.echo(f"         Pots: {len(cache.get('pots', []))}")
+        if cache.get("last_updated"):
+            typer.echo(f"         Last updated: {cache['last_updated'][:19]}")
+    else:
+        typer.echo("\n  Cache: Not found")
+
+    # Database status
+    if DB_FILE.exists():
+        database = MonzoDatabase()
+        db_stats = database.stats()
+        typer.echo(f"\n  Database: {DB_FILE.name}")
+        for table, count in db_stats.items():
+            typer.echo(f"            {table}: {count}")
+    else:
+        typer.echo("\n  Database: Not found")
+
+
+if __name__ == "__main__":
+    app()

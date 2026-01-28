@@ -77,8 +77,7 @@ from pathlib import Path
 
 import duckdb
 
-PROJECT_ROOT = Path(__file__).parent.parent
-DB_FILE = PROJECT_ROOT / ".monzo.duckdb"
+from monzo_api.src.config import DB_FILE
 
 SCHEMA = """
 -- ============================================
