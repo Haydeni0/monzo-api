@@ -16,13 +16,19 @@ from monzo_api.src.utils import create_client, load_token
 
 
 class SCAExpiredError(Exception):
-    """Raised when the 90-day transaction limit is hit due to expired SCA."""
+    """Raised when the 90-day transaction limit is hit due to expired SCA.
+
+    After 5 minutes of authentication, Monzo restricts access to last 90 days only.
+    See: https://docs.monzo.com/#list-transactions
+    """
 
     def __init__(self) -> None:
         """Initialize with helpful message."""
         super().__init__(
             "SCA expired - can only access last 89 days.\n"
-            "Run 'monzo auth --force' then immediately 'monzo export -d <days>' for full history."
+            "After 5 minutes of auth, Monzo limits transaction history.\n"
+            "Run 'monzo auth --force' then immediately 'monzo export -d <days>' for full history.\n"
+            "Docs: https://docs.monzo.com/#list-transactions"
         )
 
 
