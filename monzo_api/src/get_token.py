@@ -145,7 +145,7 @@ def test_token(access_token: str) -> bool:
         return False
 
 
-def main() -> None:
+def token_oauth() -> None:
     """Run the OAuth token flow."""
     if CLIENT_ID == "YOUR_CLIENT_ID" or CLIENT_SECRET == "YOUR_CLIENT_SECRET":  # noqa: S105
         print("ERROR: Set your MONZO_CLIENT_ID and MONZO_CLIENT_SECRET")
@@ -204,4 +204,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    token_oauth()

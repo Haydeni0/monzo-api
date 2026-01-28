@@ -1,7 +1,7 @@
 """Monzo API calling functions.
 
 Functions for fetching data from the Monzo API.
-Uses backward pagination with `before` param to get full transaction history.
+Uses yearly chunking with forward pagination to handle API limits.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -12,6 +12,8 @@ from monzo_api.src.config import CACHE_FILE
 from monzo_api.src.models import Account, Balance, MonzoExport, Pot, Transaction
 from monzo_api.src.utils import create_client, load_token
 
+CHUNK_SIZE_DAYS = 364  # Monzo API limit is 365 days
+
 
 class SCAExpiredError(Exception):
     """Raised when the 90-day transaction limit is hit due to expired SCA.
@@ -20,13 +22,16 @@ class SCAExpiredError(Exception):
     See: https://docs.monzo.com/#list-transactions
     """
 
-    def __init__(self) -> None:
+    def __init__(self, msg: str | None = None) -> None:
         """Initialize with helpful message."""
         super().__init__(
-            "SCA expired - can only access last 89 days.\n"
-            "After 5 minutes of auth, Monzo limits transaction history to 89 days.\n"
-            "Run 'monzo auth --force' to reauthenticate for full history (for 5 minutes).\n"
-            "Docs: https://docs.monzo.com/#list-transactions"
+            msg
+            or (
+                "SCA expired - can only access last 89 days.\n"
+                "After 5 minutes of auth, Monzo limits transaction history to 89 days.\n"
+                "Run 'monzo auth --force' to reauthenticate for full history.\n"
+                "Docs: https://docs.monzo.com/#list-transactions"
+            )
         )
 
 
@@ -53,51 +58,88 @@ def fetch_balance(client: httpx.Client, account_id: str) -> Balance:
 
 def fetch_transactions(
     client: httpx.Client,
-    account_id: str,
-    since: str | None = None,
+    account: Account,
+    days: int | None = None,
 ) -> list[Transaction]:
-    """Fetch transactions using backward pagination with `before`.
+    """Fetch transactions using yearly chunking with forward pagination.
 
-    Uses `before` param to avoid the 365-day `since` limit.
-    When `since` is provided, includes it in API request (since+before works for any range).
+    Monzo API errors:
+    (1) If you request a time range >= 365 days, you get a 400 error.
+    (2) If you request a time range >= 90 days, AND you have not authenticated
+        in the last 5 minutes, you get a 403 error.
+
+    This implementation breaks the full history into 1-year chunks to avoid (1).
+
+    Args:
+        client: HTTP client with auth.
+        account: Account to fetch transactions for.
+        days: Number of days to fetch. None = full history from account creation.
+
+    Returns:
+        List of transactions sorted by created date.
     """
+    account_created = account.created or datetime.now(UTC) - timedelta(days=CHUNK_SIZE_DAYS)
+
+    # Calculate start date
+    now = datetime.now(UTC)
+    if days is not None:
+        requested_start = now - timedelta(days=days)
+        chunk_start = max(requested_start, account_created)
+        account_age_days = (now - account_created).days
+        if days > account_age_days:
+            print(f"    Note: Account is only {account_age_days} days old")
+    else:
+        chunk_start = account_created
+
     all_txs: list[Transaction] = []
-    before_cursor: str | None = None  # Start from now
+    chunk_size = timedelta(days=CHUNK_SIZE_DAYS)
 
-    while True:
-        params: dict = {
-            "account_id": account_id,
-            "limit": 100,
-            "expand[]": "merchant",
-        }
-        if before_cursor:
-            params["before"] = before_cursor
-        if since:
-            # Including both since+before avoids 365-day limit and stops at our boundary
-            params["since"] = since
+    while chunk_start < now:
+        chunk_end = min(chunk_start + chunk_size, now + timedelta(days=1))
+        since_cursor = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        before_bound = chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        resp = client.get("/transactions", params=params)
-        if resp.status_code == 403:
-            raise SCAExpiredError
-        resp.raise_for_status()
-        txs_raw = resp.json().get("transactions", [])
+        while True:
+            params = {
+                "account_id": account.id,
+                "limit": 100,
+                "expand[]": "merchant",
+                "since": since_cursor,
+                "before": before_bound,
+            }
 
-        if not txs_raw:
-            break
+            resp = client.get("/transactions", params=params)
+            if resp.status_code == 403:
+                if not all_txs:
+                    raise SCAExpiredError
+                return sorted(all_txs, key=lambda t: t.created)
+            if resp.status_code == 400:
+                break
+            resp.raise_for_status()
 
-        txs = [Transaction.model_validate(t) for t in txs_raw]
-        all_txs.extend(txs)
+            txs_raw = resp.json().get("transactions", [])
+            if not txs_raw:
+                break
 
-        # Set cursor to oldest transaction's timestamp for next page
-        oldest = min(txs, key=lambda t: t.created)
-        before_cursor = oldest.created.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            txs = [Transaction.model_validate(t) for t in txs_raw]
+            all_txs.extend(txs)
 
-        if len(all_txs) % 1000 < 100:
-            print(f"    {len(all_txs)}...")
+            if len(all_txs) % 1000 < 100:
+                print(f"    {len(all_txs)}...")
 
-    # Sort oldest first (consistent with forward pagination)
-    all_txs.sort(key=lambda t: t.created)
-    return all_txs
+            newest = max(txs, key=lambda t: t.created)
+            since_cursor = newest.id
+
+        chunk_start = chunk_end
+
+    # Dedupe (in case of overlaps at chunk boundaries)
+    seen_ids: set[str] = set()
+    deduped: list[Transaction] = []
+    for tx in sorted(all_txs, key=lambda t: t.created):
+        if tx.id not in seen_ids:
+            seen_ids.add(tx.id)
+            deduped.append(tx)
+    return deduped
 
 
 def export(days: int | None = None) -> MonzoExport:
@@ -107,10 +149,8 @@ def export(days: int | None = None) -> MonzoExport:
         days: Number of days to fetch. None = full history.
     """
     if days:
-        since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        print(f"Fetching last {days} days (since {since[:10]})\n")
+        print(f"Fetching last {days} days\n")
     else:
-        since = None
         print("Fetching full transaction history\n")
 
     token = load_token()
@@ -132,7 +172,7 @@ def export(days: int | None = None) -> MonzoExport:
     print("\nTransactions:")
     for acc in active:
         print(f"  {acc.type}:")
-        txs = fetch_transactions(client, acc.id, since)
+        txs = fetch_transactions(client, acc, days)
         transactions[acc.id] = txs
         print(f"    {len(txs)} transactions")
 
@@ -143,7 +183,7 @@ def export(days: int | None = None) -> MonzoExport:
 
     return MonzoExport(
         exported_at=datetime.now(UTC),
-        since=since,
+        since=None,
         days=days,
         accounts=accounts,
         pots=pots,

@@ -7,7 +7,7 @@ import typer
 from monzo_api.src.api_calls import main as export_main
 from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
 from monzo_api.src.database import MonzoDatabase
-from monzo_api.src.get_token import main as get_token_main
+from monzo_api.src.get_token import token_oauth
 from monzo_api.src.models import MonzoExport
 from monzo_api.src.utils import load_token_data
 
@@ -23,7 +23,7 @@ def auth(
         TOKEN_FILE.unlink()
         typer.echo("Removed existing token.")
 
-    get_token_main()
+    token_oauth()
 
 
 @app.command()
