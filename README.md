@@ -39,7 +39,7 @@ uv sync
 
 ## Authentication
 
-1. Create a client at [`https://developers.monzo.com`](https://developers.monzo.com)
+1. Create a client at [https://developers.monzo.com](https://developers.monzo.com)
    - Approve the login on the mobile app
    - Go to Clients, and create a new OAuth client
    - Set **Redirect URL** to: `http://localhost:8080/callback`
