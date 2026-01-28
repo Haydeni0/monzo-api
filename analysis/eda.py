@@ -1,7 +1,7 @@
 # %%
 from monzo_api.src.database import MonzoDatabase
 
-from plots import balance_overview, transaction_waterfall
+from plots import balance_overview, spending_waterfall, transaction_waterfall
 
 db = MonzoDatabase()
 print("Connected to database")
@@ -19,6 +19,14 @@ fig_waterfall.show()
 fig_waterfall_joint = transaction_waterfall(db, account_type="uk_retail_joint", days=None)
 fig_waterfall_joint.show()
 
+# %% Spending waterfall - Current account
+fig_spending = spending_waterfall(db, account_type="uk_retail", days=None)
+fig_spending.show()
+
+# %% Spending waterfall - Joint account
+fig_spending_joint = spending_waterfall(db, account_type="uk_retail_joint", days=None)
+fig_spending_joint.show()
+
 # %% Export to HTML and PNG
 fig.write_html("analysis/balance_overview.html", include_plotlyjs=True)
 fig.write_image("analysis/balance_overview.png", scale=2)
@@ -26,6 +34,10 @@ fig_waterfall.write_html("analysis/waterfall_current.html", include_plotlyjs=Tru
 fig_waterfall.write_image("analysis/waterfall_current.png", scale=2)
 fig_waterfall_joint.write_html("analysis/waterfall_joint.html", include_plotlyjs=True)
 fig_waterfall_joint.write_image("analysis/waterfall_joint.png", scale=2)
+fig_spending.write_html("analysis/spending_current.html", include_plotlyjs=True)
+fig_spending.write_image("analysis/spending_current.png", scale=2)
+fig_spending_joint.write_html("analysis/spending_joint.html", include_plotlyjs=True)
+fig_spending_joint.write_image("analysis/spending_joint.png", scale=2)
 print("Exported to analysis/")
 
 # %%
