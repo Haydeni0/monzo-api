@@ -35,7 +35,7 @@ def _verify_balances(
     table = Table(title="Account Balances", show_header=True, header_style="bold")
     table.add_column("Account")
     table.add_column("Balance", justify="right")
-    table.add_column("Status", justify="center")
+    table.add_column("Synced", justify="center")
 
     all_ok = True
     for acc in accounts:
@@ -47,9 +47,9 @@ def _verify_balances(
         ok = abs(diff) < 0.01
 
         if ok:
-            status = "[green]OK[/green]"
+            status = "[green]✓[/green]"
         else:
-            status = f"[red]diff {diff:+.2f}[/red]"
+            status = f"[red]✗ {diff:+.2f}[/red]"
             all_ok = False
 
         table.add_row(acc.type, f"£{api_bal:,.2f}", status)
@@ -59,7 +59,7 @@ def _verify_balances(
 
     if not all_ok:
         console.print(
-            "\n[yellow]Warning: Balances do not match between the API and the database."
+            "\n[yellow]Warning: Database not synced with API."
             " Full export may be required (run `monzo export` again)[/yellow]"
         )
     return all_ok
@@ -87,6 +87,7 @@ def export(
 
     database = MonzoDatabase()
     database.import_data(results)
+    database.print_stats()
 
     # Verify balances against database
     with monzo_client() as client:

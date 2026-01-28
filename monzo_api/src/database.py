@@ -410,14 +410,6 @@ class MonzoDatabase:
             counts["pots"] = self.import_pots(data.pots)
             progress.update(task, advance=1, description="[cyan]Pots done")
 
-        # Show import summary
-        table = Table(title="Database Import Complete", show_header=True, header_style="bold")
-        table.add_column("Table")
-        table.add_column("Rows", justify="right")
-        for tbl, count in counts.items():
-            table.add_row(tbl, f"{count:,}")
-        console.print(table)
-
         return counts
 
     @property
