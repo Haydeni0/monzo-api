@@ -7,6 +7,7 @@ Uses yearly chunking with forward pagination to handle API limits.
 from datetime import UTC, datetime, timedelta
 
 import httpx
+from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeElapsedColumn
 
 from monzo_api.src.models import Account, Balance, MonzoExport, Pot, Transaction
 from monzo_api.src.utils import console, monzo_client
@@ -120,6 +121,8 @@ def fetch_transactions(
     client: httpx.Client,
     account: Account,
     days: int | None = None,
+    progress: Progress | None = None,
+    task_id: TaskID | None = None,
 ) -> list[Transaction]:
     """Fetch transactions using yearly chunking.
 
@@ -131,6 +134,8 @@ def fetch_transactions(
         client: HTTP client with auth.
         account: Account to fetch transactions for.
         days: Number of days to fetch. None = full history.
+        progress: Optional rich Progress instance for progress bar.
+        task_id: Optional task ID for progress updates.
 
     Returns:
         List of transactions sorted by created date.
@@ -141,26 +146,33 @@ def fetch_transactions(
     # Calculate start date
     if days is not None:
         start = max(now - timedelta(days=days), account_created)
-        if days > (now - account_created).days:
-            console.print(
-                f"    [dim]Note: Account is only {(now - account_created).days} days old[/dim]"
-            )
     else:
         start = account_created
+
+    # Calculate total chunks for progress
+    total_days = (now - start).days
+    total_chunks = max(1, (total_days + CHUNK_SIZE_DAYS - 1) // CHUNK_SIZE_DAYS)
+
+    if progress and task_id is not None:
+        progress.update(task_id, total=total_chunks)
 
     # Fetch in yearly chunks
     all_txs: list[Transaction] = []
     seen_ids: set[str] = set()
     chunk_start = start
+    chunks_done = 0
 
     while chunk_start < now:
         chunk_end = min(chunk_start + timedelta(days=CHUNK_SIZE_DAYS), now + timedelta(days=1))
 
         txs, sca_expired = _fetch_chunk(client, account.id, chunk_start, chunk_end, seen_ids)
         all_txs.extend(txs)
+        chunks_done += 1
 
-        if len(all_txs) % 1000 < 100 and all_txs:
-            console.print(f"    [dim]{len(all_txs)}...[/dim]")
+        if progress and task_id is not None:
+            progress.update(
+                task_id, completed=chunks_done, description=f"{account.type} ({len(all_txs)})"
+            )
 
         if sca_expired:
             if not all_txs:
@@ -198,12 +210,19 @@ def export(days: int | None = None) -> MonzoExport:
 
         # Transactions
         transactions: dict[str, list[Transaction]] = {}
-        console.print("\n[bold]Transactions:[/bold]")
-        for acc in active:
-            console.print(f"  {acc.type}:")
-            txs = fetch_transactions(client, acc, days)
-            transactions[acc.id] = txs
-            console.print(f"    [green]{len(txs)}[/green] transactions")
+        console.print()
+        with Progress(
+            TextColumn("[bold]{task.description}[/bold]"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            for acc in active:
+                task = progress.add_task(acc.type, total=1)
+                txs = fetch_transactions(client, acc, days, progress, task)
+                transactions[acc.id] = txs
+                progress.update(task, description=f"[green]{acc.type}[/green] ({len(txs)})")
 
         total = sum(len(t) for t in transactions.values())
         console.print(f"\n[bold]Total:[/bold] {total} transactions")

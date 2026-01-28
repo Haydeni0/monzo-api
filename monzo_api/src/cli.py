@@ -27,15 +27,19 @@ def auth(
     token_oauth()
 
 
-def _verify_balances(api_balances: dict[str, float], db_balances: dict[str, float]) -> bool:
+def _verify_balances(
+    accounts: list, api_balances: dict[str, float], db_balances: dict[str, float]
+) -> bool:
     """Verify API balances match database. Returns True if all OK."""
+    acc_names = {acc.id: acc.type for acc in accounts}
     all_ok = True
     for acc_id, api_bal in api_balances.items():
         db_bal = db_balances.get(acc_id, 0.0)
         diff = api_bal - db_bal
         if abs(diff) >= 0.01:
+            name = acc_names.get(acc_id, acc_id[:20])
             console.print(
-                f"[red]MISMATCH[/red] {acc_id[:20]}: API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f}"
+                f"[red]MISMATCH[/red] {name}: API={api_bal:.2f}, DB={db_bal:.2f}, diff={diff:+.2f}"
             )
             all_ok = False
 
@@ -71,7 +75,6 @@ def export(
 
     database = MonzoDatabase()
     database.import_data(results)
-    database.print_stats()
 
     # Verify balances against database
     with monzo_client() as client:
@@ -84,7 +87,7 @@ def export(
 
     db_balances = database.account_balances
 
-    _verify_balances(api_balances, db_balances)
+    _verify_balances(accounts, api_balances, db_balances)
 
 
 @app.command()
