@@ -4,11 +4,10 @@ import json
 
 import typer
 
-from monzo_api.src.api_calls import main as export_main
+from monzo_api.src.api_calls import export as export_data
 from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
 from monzo_api.src.database import MonzoDatabase
 from monzo_api.src.get_token import token_oauth
-from monzo_api.src.models import MonzoExport
 from monzo_api.src.utils import load_token_data
 
 app = typer.Typer(help="Monzo API tools for exporting and analyzing your data.")
@@ -29,31 +28,23 @@ def auth(
 @app.command()
 def export(
     days: int | None = typer.Option(None, "--days", "-d", help="Days of history (omit for full)"),
+    no_ingest: bool = typer.Option(False, "--no-ingest", help="Skip database import (JSON only)"),
 ) -> None:
-    """Export Monzo data to JSON.
+    """Export Monzo data to JSON and ingest into database.
 
     Fetches full history by default using backward pagination.
     Use --days to limit to recent transactions only.
     """
-    export_main(days)
+    results = export_data(days)
+    results.save(CACHE_FILE)
+    typer.echo(f"Saved to {CACHE_FILE}")
 
-
-@app.command()
-def ingest() -> None:
-    """Import cached JSON data into the database."""
-    if not CACHE_FILE.exists():
-        typer.echo(f"No cache file found at {CACHE_FILE}")
-        typer.echo("Run 'monzo export' first.")
-        raise typer.Exit(1)
-
-    typer.echo(f"Loading {CACHE_FILE}...")
-    data = MonzoExport.load(CACHE_FILE)
-    typer.echo(
-        f"Loaded {len(data.all_transactions)} transactions from {data.exported_at:%Y-%m-%d}\n"
-    )
+    if no_ingest:
+        typer.echo("Skipping database ingest (--no-ingest)")
+        return
 
     database = MonzoDatabase()
-    database.import_data(data)
+    database.import_data(results)
     database.print_stats()
 
 
@@ -75,6 +66,7 @@ def db(
     elif stats:
         database.print_stats()
     else:
+        typer.echo("Ensuring database schema...")
         database.setup()
         database.print_stats()
 
