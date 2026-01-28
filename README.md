@@ -1,6 +1,6 @@
 # Monzo API
 
-Python tools for exporting and analyzing your own Monzo data, by pulling it from the Monzo API.
+Python tools for exporting and analyzing your own Monzo data, by pulling it from the [Monzo API](https://docs.monzo.com/#introduction).
 
 ## Setup
 
@@ -17,16 +17,19 @@ uv sync
    - Set **Confidentiality** to confidential
 2. Create `./.env.secrets` in project root with your client ID and secret:
 
-```env
-MONZO_CLIENT_ID=oauth2client_xxx
-MONZO_CLIENT_SECRET=mnzconf.xxx
-```
+    ```env
+    MONZO_CLIENT_ID=oauth2client_xxx
+    MONZO_CLIENT_SECRET=mnzconf.xxx
+    ```
 
 ## Workflow
 
 ### Full History (default)
 
 ```bash
+# Activate python virtual environment
+source .venv/bin/activate
+# Authenticate with Monzo and export bank account history
 monzo auth --force    # fresh auth, approve in Monzo app
 monzo export          # export full history + import to DuckDB (run within 5 mins)
 ```
