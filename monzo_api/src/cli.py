@@ -139,15 +139,13 @@ def stats() -> None:
 def accounts() -> None:
     """Show accounts table."""
     database = MonzoDatabase()
-    with database as conn:
-        rows = conn.sql("SELECT id, type, closed FROM accounts ORDER BY type").fetchall()
     table = Table(title="Accounts", show_header=True, header_style="bold")
     table.add_column("ID")
     table.add_column("Type")
     table.add_column("Closed")
-    for row in rows:
-        closed = "[red]Yes[/red]" if row[2] else "[green]No[/green]"
-        table.add_row(row[0], row[1], closed)
+    for acc_id, acc_type, closed in database.accounts:
+        status = "[red]Yes[/red]" if closed else "[green]No[/green]"
+        table.add_row(acc_id, acc_type, status)
     console.print(table)
 
 

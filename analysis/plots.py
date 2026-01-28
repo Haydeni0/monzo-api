@@ -177,3 +177,113 @@ def balance_overview(db: MonzoDatabase) -> go.Figure:
 
     return fig
 
+
+def transaction_waterfall(
+    db: MonzoDatabase,
+    account_type: str = "uk_retail",
+    days: int | None = 30,
+) -> go.Figure:
+    """Create waterfall chart showing balance changes from transactions.
+
+    Args:
+        db: MonzoDatabase instance.
+        account_type: Account type from the `accounts` table (e.g., query db for options).
+        days: Number of days to show. None = all history.
+
+    Returns:
+        Plotly Waterfall Figure showing how balance changes over time.
+
+    Raises:
+        ValueError: If account_type is not valid.
+    """
+    valid_types = db.account_types
+    if account_type not in valid_types:
+        raise ValueError(f"Invalid account_type '{account_type}'. Valid: {valid_types}")
+
+    date_filter = f"AND t.created >= CURRENT_DATE - INTERVAL '{days} days'" if days else ""
+
+    with db as conn:
+        # Get daily net change with transaction details
+        df = conn.sql(f"""
+            SELECT 
+                t.created::DATE as date,
+                SUM(t.amount) / 100.0 as net_change,
+                STRING_AGG(
+                    COALESCE(t.description, 'Unknown') || ': £' || 
+                    PRINTF('%.2f', t.amount / 100.0),
+                    '<br>'
+                    ORDER BY t.amount DESC
+                ) as transactions
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE a.type = '{account_type}'
+              AND t.decline_reason IS NULL
+              {date_filter}
+            GROUP BY t.created::DATE
+            ORDER BY t.created::DATE
+        """).pl()  # noqa: S608
+
+    if df.is_empty():
+        fig = go.Figure()
+        fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+
+    # Build waterfall data
+    dates = df["date"].to_list()
+    values = df["net_change"].to_list()
+    transactions = df["transactions"].to_list()
+    measures = ["relative"] * len(values)
+
+    # Format dates for display - use shorter format for large datasets
+    if len(dates) > 60:
+        x_labels = [d.strftime("%Y-%m-%d") for d in dates]
+    else:
+        x_labels = [d.strftime("%d %b") for d in dates]
+
+    # Disable connector lines for large datasets (they become visual noise)
+    connector_config = (
+        {"visible": False} if len(values) > 60 else {"line": {"color": "#ccc", "width": 1}}
+    )
+
+    # Build custom hover text with transaction details
+    hover_texts = []
+    for date, val, txns in zip(x_labels, values, transactions):
+        # Truncate if too many transactions
+        txn_lines = txns.split("<br>") if txns else []
+        if len(txn_lines) > 8:
+            txns = "<br>".join(txn_lines[:8]) + f"<br>... +{len(txn_lines) - 8} more"
+        hover_texts.append(f"<b>{date}</b><br>Net: £{val:+,.2f}<br><br>{txns}")
+
+    fig = go.Figure(
+        go.Waterfall(
+            x=x_labels,
+            y=values,
+            measure=measures,
+            increasing={"marker": {"color": "#26A69A"}},
+            decreasing={"marker": {"color": "#EF5350"}},
+            connector=connector_config,
+            hovertext=hover_texts,
+            hoverinfo="text",
+        )
+    )
+
+    # Account name for title
+    account_names = {
+        "uk_retail": "Current Account",
+        "uk_retail_joint": "Joint Account",
+        "uk_monzo_flex": "Monzo Flex",
+    }
+    title = account_names.get(account_type, account_type)
+
+    fig.update_layout(
+        template="plotly_white",
+        height=500,
+        width=1200,
+        hovermode="x",
+        margin={"t": 80, "l": 80, "r": 40, "b": 80},
+        title={"text": f"{title} - Balance Waterfall", "x": 0.5, "font": {"size": 18}},
+        yaxis_title="Daily Net Change (£)",
+        xaxis_tickangle=-45,
+    )
+
+    return fig

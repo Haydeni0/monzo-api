@@ -413,6 +413,21 @@ class MonzoDatabase:
         return counts
 
     @property
+    def accounts(self) -> list[tuple[str, str, bool]]:
+        """Get all accounts from database.
+
+        Returns list of (id, type, closed) tuples.
+        """
+        with self as conn:
+            rows = conn.execute("SELECT id, type, closed FROM accounts ORDER BY type").fetchall()
+        return [(row[0], row[1], bool(row[2])) for row in rows]
+
+    @property
+    def account_types(self) -> list[str]:
+        """Get list of valid account types."""
+        return [acc[1] for acc in self.accounts]
+
+    @property
     def account_balances(self) -> dict[str, float]:
         """Get current balance per account from database.
 
