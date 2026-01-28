@@ -5,9 +5,10 @@ import json
 import typer
 
 from monzo_api.src.config import CACHE_FILE, DB_FILE, TOKEN_FILE
-from monzo_api.src.db_schema import MonzoDatabase
+from monzo_api.src.database import MonzoDatabase
 from monzo_api.src.export_data import main as export_main
 from monzo_api.src.get_token import main as get_token_main
+from monzo_api.src.models import MonzoExport
 from monzo_api.src.utils import load_token_data
 
 app = typer.Typer(help="Monzo API tools for exporting and analyzing your data.")
@@ -34,6 +35,23 @@ def export(
     Default 90 days. Use more days after fresh auth (within 5 min window).
     """
     export_main(days)
+
+
+@app.command()
+def ingest() -> None:
+    """Import cached JSON data into the database."""
+    if not CACHE_FILE.exists():
+        typer.echo(f"No cache file found at {CACHE_FILE}")
+        typer.echo("Run 'monzo export' first.")
+        raise typer.Exit(1)
+
+    typer.echo(f"Loading {CACHE_FILE}...")
+    data = MonzoExport.load(CACHE_FILE)
+    typer.echo(f"Loaded {len(data.all_transactions)} transactions from {data.exported_at:%Y-%m-%d}\n")
+
+    database = MonzoDatabase()
+    database.import_data(data)
+    database.print_stats()
 
 
 @app.command()

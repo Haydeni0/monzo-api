@@ -105,8 +105,6 @@ class Account(BaseModel):
     description: str | None = None
     created: datetime | None = None
     closed: bool = False
-    sort_code: str | None = None
-    account_number: str | None = None
     currency: str = "GBP"
 
     model_config = {"extra": "ignore"}

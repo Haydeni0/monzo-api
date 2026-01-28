@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from monzo_api.src.db_schema import MonzoDatabase
+from monzo_api.src.database import MonzoDatabase
 
 
 @pytest.fixture
