@@ -60,9 +60,10 @@ monzo auth --force    # force new authentication
 monzo export          # export full history + import to database
 monzo export -d 30    # export only last 30 days
 monzo export --no-ingest  # JSON only, skip database
-monzo db              # ensure database schema exists
-monzo db --stats      # show database row counts
-monzo db --reset      # drop and recreate tables
+monzo db setup        # ensure database schema exists
+monzo db stats        # show database row counts
+monzo db accounts     # show accounts table
+monzo db reset        # drop and recreate tables
 ```
 
 ## Data Storage
