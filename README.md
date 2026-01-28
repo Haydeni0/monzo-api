@@ -31,6 +31,8 @@ Opens at `http://127.0.0.1:8050` with:
 
 ## Setup
 
+Set up virtual environment with [uv](https://docs.astral.sh/uv/#installation):
+
 ```bash
 uv sync
 ```
