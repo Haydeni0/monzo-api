@@ -9,9 +9,13 @@ wheels/
 # Virtual environments
 .venv
 
-# Secrets
+# Secrets and data
 .monzo_token.json
 .monzo_transactions.json
 .monzo_data.json*
 .monzo.duckdb
 .env.secrets
+
+# Generated analysis outputs
+analysis/*.html
+analysis/*.csv
