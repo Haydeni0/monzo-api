@@ -6,7 +6,7 @@ from pathlib import Path
 from dash import Dash, dcc, html, callback, Input, Output
 
 from monzo_api.src.database import MonzoDatabase
-from plots import balance_overview, spending_waterfall, transaction_waterfall
+from plots import balance_overview, pot_history, spending_waterfall, transaction_waterfall
 
 # Setup logging (reset log file each run)
 LOG_FILE = Path(__file__).parent / "dashboard.log"
@@ -117,6 +117,14 @@ app.layout = html.Div(
                     style={"marginBottom": "15px", "maxWidth": "800px"},
                 ),
                 dcc.Graph(id="spending-waterfall"),
+            ]
+        ),
+        html.Hr(),
+        # Pot History
+        html.Div(
+            [
+                html.H2("Pot History"),
+                dcc.Graph(id="pot-history", figure=pot_history(get_db())),
             ]
         ),
     ],
